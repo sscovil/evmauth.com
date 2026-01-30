@@ -1,0 +1,14 @@
+{
+  "depends_on": ["postgres", "redis", "auth"],
+  "variants": [
+    {
+      "name": "int-docs",
+      "environment": {
+        "API_TITLE": "Internal API Documentation",
+        "API_URL": "http://localhost:8001",
+        "SERVICE_NAME_PREFIX": "int-"
+      },
+      "depends_on": ["postgres", "redis", "int-auth"]
+    }
+  ]
+}

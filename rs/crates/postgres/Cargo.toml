@@ -1,0 +1,9 @@
+[package]
+name = "postgres"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+sqlx.workspace = true

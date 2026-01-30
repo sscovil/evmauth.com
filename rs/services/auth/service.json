@@ -1,0 +1,8 @@
+{
+  "variants": [
+    {
+      "name": "int-auth",
+      "features": ["internal-api"]
+    }
+  ]
+}

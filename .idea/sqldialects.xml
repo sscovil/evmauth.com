@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/docker/pg/001_db_migrator.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/docker/pg/002_auth_schema.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/docker/pg/003_assets_schema.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/rs/services/db/migrations/20251218000001_auth_entities.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/rs/services/db/migrations/20251218000006_assets_files.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/rs/services/db/seeds/20251218555002_assets_files.sql" dialect="PostgreSQL" />
+  </component>
+</project>

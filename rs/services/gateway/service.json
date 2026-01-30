@@ -1,0 +1,14 @@
+{
+  "ports": ["8000:8000"],
+  "depends_on": ["postgres", "redis", "auth", "docs"],
+  "variants": [
+    {
+      "name": "int-gateway",
+      "ports": ["8001:8000"],
+      "environment": {
+        "SERVICE_NAME_PREFIX": "int-"
+      },
+      "depends_on": ["postgres", "redis", "int-auth", "int-docs"]
+    }
+  ]
+}

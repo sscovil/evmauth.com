@@ -1,0 +1,61 @@
+[package]
+name = "assets"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# Web framework
+axum = { workspace = true }
+tokio = { workspace = true }
+
+# Database
+sqlx = { workspace = true }
+postgres = { workspace = true }
+
+# Redis
+redis = { workspace = true }
+redis-client = { workspace = true }
+
+# Pagination
+pagination = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Configuration
+dotenvy = { workspace = true }
+
+# Logging and tracing
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# HTTP middleware
+tower-http = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Utilities
+async-trait = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# OpenAPI documentation
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
+
+# S3 client
+aws-sdk-s3 = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-credential-types = "1"
+
+# File handling
+axum-extra = { version = "0.10", features = ["multipart"] }
+mime_guess = "2"
+infer = "0.19"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+
+[dev-dependencies]

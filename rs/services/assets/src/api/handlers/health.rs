@@ -1,0 +1,43 @@
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use serde_json::json;
+
+use crate::AppState;
+
+/// Health check handler
+///
+/// Checks the status of database, Redis, and S3 connections
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Service is healthy"),
+        (status = 503, description = "Service is unhealthy")
+    ),
+    tag = "health"
+)]
+pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let db_healthy = sqlx::query("SELECT 1").fetch_one(&state.db).await.is_ok();
+
+    let redis_healthy = redis::cmd("PING")
+        .query_async::<String>(&mut state.redis.clone())
+        .await
+        .is_ok();
+
+    let s3_healthy = state.s3.health_check().await;
+
+    let status = if db_healthy && redis_healthy && s3_healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (
+        status,
+        Json(json!({
+            "status": if status == StatusCode::OK { "healthy" } else { "unhealthy" },
+            "database": if db_healthy { "connected" } else { "disconnected" },
+            "redis": if redis_healthy { "connected" } else { "disconnected" },
+            "s3": if s3_healthy { "connected" } else { "disconnected" },
+        })),
+    )
+}

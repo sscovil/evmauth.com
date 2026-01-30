@@ -1,0 +1,6 @@
+{
+  "is_task": true,
+  "features": ["dev-seeds"],
+  "depends_on": ["postgres"],
+  "trigger_mode": "manual"
+}

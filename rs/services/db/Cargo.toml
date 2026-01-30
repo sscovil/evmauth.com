@@ -1,0 +1,31 @@
+[package]
+name = "db"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = []
+dev-seeds = []
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+
+# Database
+sqlx = { workspace = true }
+postgres = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+
+# Configuration
+dotenvy = { workspace = true }
+
+# Logging and tracing
+tracing = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+[dev-dependencies]

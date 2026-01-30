@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO auth.people (display_name, description, auth_provider_name, auth_provider_ref, primary_email)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING id, display_name, description, auth_provider_name, auth_provider_ref, primary_email, created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "auth_provider_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "auth_provider_ref",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "primary_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "90e6845294ec1fbe2a1bad46e06b1c6137d4dfcf7a7702b719bc7b194b8db24d"
+}

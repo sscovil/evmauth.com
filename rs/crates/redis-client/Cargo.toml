@@ -1,0 +1,9 @@
+[package]
+name = "redis-client"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+redis.workspace = true
+serde.workspace = true
