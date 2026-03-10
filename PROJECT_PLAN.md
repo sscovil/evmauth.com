@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-10 (rev 4)
+> **Last updated:** 2026-03-10 (rev 5)
 
 ---
 
@@ -14,7 +14,7 @@
 4. [Domain Model](#4-domain-model)
 5. [Database Schema](#5-database-schema)
 6. [Backend -- Rust / Axum Microservices](#6-backend--rust--axum-microservices)
-7. [Frontend -- Next.js](#7-frontend--nextjs)
+7. [Frontend -- TypeScript / Next.js Workspace](#7-frontend--typescript--nextjs-workspace)
 8. [Authentication & Identity Architecture](#8-authentication--identity-architecture)
 9. [Contract Deployment & Management](#9-contract-deployment--management)
 10. [Authorization Query API](#10-authorization-query-api)
@@ -53,7 +53,7 @@ EVMAuth is an authorization state management system built on the ERC-6909 multi-
 
 ## 2. Repository Structure
 
-Monorepo with a Cargo workspace backend (microservices architecture) and a co-located Next.js app. Each microservice owns its own database schema and domain. Services communicate via internal HTTP APIs through the gateway. Shared libraries live in `rs/crates/`.
+Monorepo with a Cargo workspace backend and a PNPM workspace frontend, both following the same microservices architecture. Each microservice owns its own database schema and domain. Services communicate via internal HTTP APIs through the gateway. Shared Rust libraries live in `rs/crates/`; shared TypeScript packages live in `ts/packages/`.
 
 ```
 evmauth.com/
@@ -224,34 +224,52 @@ evmauth.com/
 │               ├── provider.rs
 │               ├── beacon.rs
 │               └── erc6909.rs
-├── frontend/                      # TO BUILD: Next.js app
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── next.config.ts
-│   ├── biome.json
-│   ├── tsconfig.json
-│   └── src/
-│       ├── app/
-│       │   ├── layout.tsx
-│       │   ├── page.tsx
-│       │   ├── dashboard/
-│       │   │   ├── layout.tsx
-│       │   │   ├── page.tsx
-│       │   │   └── [orgSlug]/
-│       │   │       ├── contracts/
-│       │   │       ├── apps/
-│       │   │       ├── members/
-│       │   │       └── settings/
-│       │   ├── auth/
-│       │   │   ├── login/
-│       │   │   ├── callback/
-│       │   │   └── end-user/
-│       │   └── api/
-│       │       ├── auth/
-│       │       └── proxy/
-│       ├── components/
-│       ├── lib/
-│       └── types/
+├── ts/                            # TO BUILD: TypeScript frontend (PNPM workspace root)
+│   ├── pnpm-workspace.yaml        # Workspace definition
+│   ├── package.json               # Root scripts (e.g. pnpm check)
+│   ├── biome.json                 # Shared Biome config
+│   ├── tsconfig.json              # Base TypeScript config
+│   ├── services/                  # Next.js apps (each is an independent app)
+│   │   └── dashboard/             # TO BUILD: Deployer dashboard + hosted auth UI
+│   │       ├── Dockerfile
+│   │       ├── package.json
+│   │       ├── service.json       # Tilt metadata (ports, depends_on, etc.)
+│   │       ├── next.config.ts
+│   │       ├── tsconfig.json
+│   │       └── src/
+│   │           ├── app/
+│   │           │   ├── layout.tsx
+│   │           │   ├── page.tsx
+│   │           │   ├── dashboard/
+│   │           │   │   ├── layout.tsx
+│   │           │   │   ├── page.tsx
+│   │           │   │   └── [orgSlug]/
+│   │           │   │       ├── contracts/
+│   │           │   │       ├── apps/
+│   │           │   │       ├── members/
+│   │           │   │       └── settings/
+│   │           │   ├── auth/
+│   │           │   │   ├── login/
+│   │           │   │   ├── callback/
+│   │           │   │   └── end-user/
+│   │           │   └── api/
+│   │           │       ├── auth/
+│   │           │       └── proxy/
+│   │           ├── components/
+│   │           ├── lib/
+│   │           └── types/
+│   └── packages/                  # Shared packages consumed by services
+│       ├── ui/                    # Mantine theme, custom components
+│       │   ├── package.json
+│       │   ├── tsconfig.json
+│       │   └── src/
+│       │       ├── index.ts
+│       │       ├── theme.ts
+│       │       └── components/
+│       └── tsconfig/              # Shared TypeScript configs
+│           ├── package.json
+│           ├── base.json
+│           └── nextjs.json
 └── contracts/                     # TO ADD: Solidity ABIs
     └── abis/
         ├── EVMAuth.json
@@ -267,6 +285,8 @@ evmauth.com/
 **Internal APIs**: Services support feature-gated internal endpoints via `service.json` variants. For example, the auth service has an `int-auth` variant that exposes `/internal/entities/*` routes when built with `--features internal-api`. The Tiltfile auto-discovers variants and can deploy them as separate containers. Internal APIs are used for cross-service data lookups.
 
 **Service discovery**: The `service-discovery` crate reads a manifest of available services and constructs URLs based on the deployment environment (Docker Compose networking vs Railway internal networking).
+
+**TypeScript workspace**: The `ts/` directory mirrors the `rs/` microservices pattern as a PNPM workspace. Each Next.js app lives in `ts/services/{app}/` with its own `service.json` for Tilt auto-discovery. Shared packages (UI theme, TypeScript configs) live in `ts/packages/` and are consumed as workspace dependencies. The Tiltfile discovers TypeScript services alongside Rust services using the same `service.json` convention.
 
 ---
 
@@ -300,18 +320,19 @@ evmauth.com/
 | `jsonwebtoken` | JWT sign/verify | RS256; load private key from env |
 | `axum-test` | Integration tests | |
 
-### Frontend
+### Frontend (PNPM Workspace: `ts/`)
 
-| Dependency | Purpose |
-|---|---|
-| `next` latest stable | Framework |
-| `@mantine/core` + `@mantine/hooks` + `@mantine/form` + `@mantine/notifications` | UI components |
-| `@turnkey/sdk-browser` | End-user Turnkey interactions |
-| `@turnkey/sdk-react` | Turnkey provider/hooks |
-| `iron-session` | Encrypted cookie sessions (deployer dashboard auth) |
-| `swr` | Data fetching / cache invalidation |
-| `typescript` | |
-| `biome` | Linting + formatting (replaces ESLint + Prettier) |
+| Dependency | Purpose | Location |
+|---|---|---|
+| `pnpm` | Package manager (workspace-native) | Root |
+| `next` latest stable | Framework | `ts/services/dashboard` |
+| `@mantine/core` + `@mantine/hooks` + `@mantine/form` + `@mantine/notifications` | UI components | `ts/packages/ui` |
+| `@turnkey/sdk-browser` | End-user Turnkey interactions | `ts/services/dashboard` |
+| `@turnkey/sdk-react` | Turnkey provider/hooks | `ts/services/dashboard` |
+| `iron-session` | Encrypted cookie sessions (deployer dashboard auth) | `ts/services/dashboard` |
+| `swr` | Data fetching / cache invalidation | `ts/services/dashboard` |
+| `typescript` | | Root |
+| `biome` | Linting + formatting (replaces ESLint + Prettier) | Root |
 
 ### Infrastructure (Existing)
 
@@ -1008,16 +1029,42 @@ No caching. Always reads live chain state.
 
 ---
 
-## 7. Frontend -- Next.js
+## 7. Frontend -- TypeScript / Next.js Workspace
 
-### Architecture Principles
+### Workspace Structure
+
+The `ts/` directory is a PNPM workspace that mirrors the `rs/` microservices pattern. Each Next.js app is a standalone service under `ts/services/`, and shared code lives in `ts/packages/`.
+
+```yaml
+# ts/pnpm-workspace.yaml
+packages:
+  - "services/*"
+  - "packages/*"
+```
+
+The Tiltfile auto-discovers TypeScript services the same way it discovers Rust services: by scanning `ts/services/` for directories containing a `service.json`. Each TypeScript service uses `pnpm dev` for hot reload in development.
+
+### Shared Packages
+
+| Package | Path | Purpose |
+|---|---|---|
+| `@evmauth/ui` | `ts/packages/ui` | Mantine theme configuration, custom components, shared styles |
+| `@evmauth/tsconfig` | `ts/packages/tsconfig` | Base TypeScript configurations (extends per-service) |
+
+Shared packages are consumed as workspace dependencies (e.g., `"@evmauth/ui": "workspace:*"` in each service's `package.json`).
+
+### Dashboard Service (`ts/services/dashboard`)
+
+This is the primary frontend application. It serves the deployer dashboard and the hosted end-user auth UI.
+
+#### Architecture Principles
 
 - The frontend is a **dumb interface**. It renders data, collects input, and calls the backend via the Next.js proxy. It contains no business logic.
 - All API calls from frontend components go to `/api/proxy/[...path]` which is a Next.js route handler that forwards the request to the Rust backend **gateway**, attaching the session cookie. This keeps the backend URL out of the browser entirely.
-- Mantine handles all UI components, theming, and responsive layout. No custom CSS unless absolutely necessary.
-- Biome enforces consistent formatting and linting. Run `biome check --apply` before commits.
+- Mantine handles all UI components, theming, and responsive layout via the `@evmauth/ui` package. No custom CSS unless absolutely necessary.
+- Biome enforces consistent formatting and linting. The root `ts/biome.json` is shared across all services and packages.
 
-### Next.js API Proxy
+#### Next.js API Proxy
 
 ```typescript
 // src/app/api/proxy/[...path]/route.ts
@@ -1028,7 +1075,7 @@ No caching. Always reads live chain state.
 
 The proxy also handles the one case where the frontend does need to talk to Turnkey directly: the end-user auth callback page uses `@turnkey/sdk-browser` to decrypt the credential Turnkey returns after OIDC. This happens in the browser, then the decrypted credential is sent to the backend to complete authentication.
 
-### Route Overview
+#### Route Overview
 
 | Route | Description |
 |---|---|
@@ -1049,13 +1096,13 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 | `/auth/end-user/callback` | End-user OAuth callback; completes PKCE code issuance |
 | `/auth/wallet` | End-user self-service -- key export, linked apps |
 
-### Session Management
+#### Session Management
 
 Deployer dashboard uses `iron-session` with an encrypted cookie. The session stores `{ personId, email }` -- nothing sensitive. The session cookie is HTTP-only, Secure, SameSite=Lax.
 
 Use `middleware.ts` to protect `/dashboard/*` routes: redirect to `/auth/login` if no valid session.
 
-### Data Fetching
+#### Data Fetching
 
 Use `swr` for all dashboard data. Define a central `fetcher` that calls the proxy routes. Pass `{ revalidateOnFocus: false }` for contract/org data that changes infrequently. Use `mutate` after write operations.
 
@@ -1068,6 +1115,15 @@ export const api = {
   delete: <T>(path: string) => mutate<T>(`/api/proxy${path}`, 'DELETE'),
 };
 ```
+
+### Adding New Frontend Services
+
+To add a new Next.js app (e.g., an internal admin tool):
+
+1. Create `ts/services/{name}/` with `package.json`, `service.json`, `next.config.ts`
+2. Add `@evmauth/ui` and `@evmauth/tsconfig` as workspace dependencies
+3. The Tiltfile auto-discovers it -- no Tiltfile changes needed
+4. Run `pnpm install` from the `ts/` root to link workspace dependencies
 
 ---
 
@@ -1269,26 +1325,26 @@ services:
 
 The Tiltfile auto-discovers services in `rs/services/`. No changes needed to the Tiltfile when adding new services -- just create the service directory with a `service.json` and the Tiltfile picks it up automatically.
 
-### Adding Frontend to Development
+### TypeScript Service Auto-Discovery
 
-When the frontend is built, add it to `docker-compose.yml`:
+The Tiltfile extends the same auto-discovery pattern to `ts/services/`. TypeScript services use a `service.json` for Tilt metadata (same schema as Rust services) and run `pnpm dev` for hot reload instead of `cargo watch`.
 
-```yaml
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    ports:
-      - "3000:3000"
-    environment:
-      BACKEND_URL: http://gateway:8000
-    env_file:
-      - .env
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+Each TypeScript service gets its own Docker Compose service entry with:
+- Volume mounts for source code and workspace packages
+- Named volumes for `node_modules` and `.next` cache
+- Port mappings from `service.json`
+- Dependencies on infrastructure and backend services
+
+Example `ts/services/dashboard/service.json`:
+
+```json
+{
+  "ports": ["3000:3000"],
+  "depends_on": ["gateway"]
+}
 ```
+
+No changes needed to the Tiltfile when adding new TypeScript services -- just create the service directory with a `package.json` and `service.json` and the Tiltfile picks it up automatically.
 
 ---
 
@@ -1305,7 +1361,7 @@ When the frontend is built, add it to `docker-compose.yml`:
 | `evmauth-analytics` | `rs/` Dockerfile (analytics binary) | Internal network only |
 | `evmauth-assets` | `rs/` Dockerfile (assets binary) | Internal network only |
 | `evmauth-docs` | `rs/` Dockerfile (docs binary) | Internal network only |
-| `evmauth-frontend` | `frontend/` Dockerfile | Next.js, NODE_ENV=production |
+| `evmauth-dashboard` | `ts/services/dashboard/` Dockerfile | Next.js, NODE_ENV=production |
 | `evmauth-postgres` | Railway Postgres plugin | Managed, auto-backups |
 | `evmauth-redis` | Railway Redis plugin | Managed |
 
@@ -1313,26 +1369,31 @@ When the frontend is built, add it to `docker-compose.yml`:
 
 The existing `rs/Dockerfile` is a multi-stage build that compiles all service binaries. Each Railway service selects its binary via the CMD override.
 
-### Frontend Production Dockerfile
+### Frontend Production Dockerfile (`ts/services/dashboard/Dockerfile`)
+
+The Dockerfile builds from the PNPM workspace root (`ts/`) to resolve workspace dependencies, then produces a standalone Next.js output.
 
 ```dockerfile
 FROM node:22-alpine AS builder
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/ ./packages/
+COPY services/dashboard/package.json ./services/dashboard/
+RUN pnpm install --frozen-lockfile
+COPY services/dashboard/ ./services/dashboard/
+RUN pnpm --filter dashboard run build
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+COPY --from=builder /app/services/dashboard/.next/standalone ./
+COPY --from=builder /app/services/dashboard/.next/static ./.next/static
+COPY --from=builder /app/services/dashboard/public ./public
 EXPOSE 3000
 CMD ["node", "server.js"]
 ```
 
-Enable `output: 'standalone'` in `next.config.ts`.
+Enable `output: 'standalone'` in `next.config.ts`. The build context for Railway should be set to `ts/`.
 
 ### Railway Config (railway.toml)
 
@@ -1379,7 +1440,11 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] Auth service: internal APIs for cross-service person/org lookup
 - [ ] Platform EVMAuth contract deployment and `PLATFORM_CONTRACT_ADDRESS` config
 - [ ] Capability token minting on new org creation
-- [ ] Frontend: Next.js app scaffolding, login page, dashboard shell, org overview page
+- [ ] Frontend: PNPM workspace scaffolding (`ts/pnpm-workspace.yaml`, root `package.json`, `biome.json`, `tsconfig.json`)
+- [ ] Frontend: `@evmauth/ui` package (Mantine theme, shared components), `@evmauth/tsconfig` package
+- [ ] Frontend: Dashboard service scaffolding (`ts/services/dashboard/`), `service.json`, Dockerfile
+- [ ] Frontend: Tiltfile TypeScript service auto-discovery (extend `discover_services` for `ts/services/`)
+- [ ] Frontend: Dashboard login page, dashboard shell, org overview page
 
 ### Phase 2 -- App Registrations & Contracts
 
@@ -1390,7 +1455,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] Contract deployment endpoint (registry calls wallets internal API for wallet lookup)
 - [ ] Operator grant/revoke endpoints + Turnkey signing via wallets service
 - [ ] Relevant token ID configuration per app registration
-- [ ] Frontend: App registration pages, contract deployment wizard, operator grant UI
+- [ ] Dashboard: App registration pages, contract deployment wizard, operator grant UI
 
 ### Phase 3 -- End User Auth
 
@@ -1420,7 +1485,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] Analytics service: scaffold, `analytics` schema migrations
 - [ ] API request logging (internal endpoint called by registry)
 - [ ] Contract event indexing (background task polling chain)
-- [ ] Dashboard analytics pages (usage, events)
+- [ ] Dashboard: Analytics pages (usage, events)
 - [ ] Org member invite flow (email invitation)
 - [ ] `RequireOrgRole` middleware enforcement on org-scoped routes (auth + registry)
 - [ ] Org settings page
@@ -1513,7 +1578,7 @@ API_GATEWAY_URL=https://api.evmauth.com
 GATEWAY_TIMEOUT_SECS=30
 EXCLUDE_SERVICES=gateway,db
 
-# ---- Frontend ----
+# ---- Frontend: Dashboard (ts/services/dashboard) ----
 
 NEXT_PUBLIC_TURNKEY_ORG_ID=...
 NEXT_PUBLIC_AUTH_BASE_URL=https://auth.evmauth.io
@@ -1543,4 +1608,7 @@ SESSION_SECRET=...
 - Each service only reads/writes its own schema. Cross-service data access goes through internal APIs. Never add FK constraints across schemas.
 - New services should follow the established patterns: `service.json` for Tilt metadata, `api/error.rs` for `ApiError`, repository traits, utoipa annotations, health check endpoint.
 - The gateway auto-discovers services -- just add a new service directory under `rs/services/` and the Tiltfile picks it up.
-- Use the existing `check.sh` script for quality checks: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`.
+- TypeScript services follow the same auto-discovery pattern: add a directory under `ts/services/` with a `package.json` and `service.json` and the Tiltfile picks it up.
+- Use PNPM workspace protocol (`"workspace:*"`) for all internal package references in `ts/`. Never publish shared packages to npm -- they are workspace-only.
+- The `ts/packages/ui` package owns the Mantine theme. All services import the theme from `@evmauth/ui` -- never duplicate theme configuration.
+- Use the existing `check.sh` script for quality checks. It already supports both Rust (`cargo fmt --check`, `cargo clippy`, `cargo test`) and TypeScript (`pnpm check` in each package with a `package.json`).
