@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-10 (rev 6)
+> **Last updated:** 2026-03-10 (rev 7)
 
 ---
 
@@ -237,27 +237,35 @@ evmauth.com/
 │   │       ├── next.config.ts
 │   │       ├── tsconfig.json
 │   │       └── src/
+│   │           ├── middleware.ts          # Route protection (iron-session)
 │   │           ├── app/
 │   │           │   ├── layout.tsx
 │   │           │   ├── page.tsx
 │   │           │   ├── dashboard/
-│   │           │   │   ├── layout.tsx
-│   │           │   │   ├── page.tsx
+│   │           │   │   ├── layout.tsx     # AppShell with UserMenu + sidebar
+│   │           │   │   ├── page.tsx       # Org overview (OrgList)
 │   │           │   │   └── [orgSlug]/
 │   │           │   │       ├── contracts/
 │   │           │   │       ├── apps/
 │   │           │   │       ├── members/
 │   │           │   │       └── settings/
 │   │           │   ├── auth/
-│   │           │   │   ├── login/
+│   │           │   │   ├── login/         # Email login with signup fallback
 │   │           │   │   ├── callback/
 │   │           │   │   └── end-user/
 │   │           │   └── api/
-│   │           │       ├── auth/
-│   │           │       └── proxy/
+│   │           │       ├── auth/          # login, signup, logout, me routes
+│   │           │       └── proxy/         # Forwards to backend with cookie passthrough
 │   │           ├── components/
+│   │           │   ├── UserMenu.tsx       # Header dropdown (name, email, sign out)
+│   │           │   ├── OrgCard.tsx        # Org card with visibility badge
+│   │           │   └── OrgList.tsx        # Grid of OrgCards with loading/empty states
 │   │           ├── lib/
+│   │           │   ├── api-client.ts      # Fetch-based API client
+│   │           │   ├── session.ts         # iron-session config + SessionData type
+│   │           │   └── hooks.ts           # SWR hooks (useMe, useOrgs)
 │   │           └── types/
+│   │               └── api.ts            # PersonResponse, OrgResponse, PaginatedResponse
 │   └── packages/                  # Shared packages consumed by services
 │       ├── ui/                    # Mantine theme, custom components
 │       │   ├── package.json
@@ -1099,9 +1107,13 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 
 #### Session Management
 
-Deployer dashboard uses `iron-session` with an encrypted cookie. The session stores `{ personId, email }` -- nothing sensitive. The session cookie is HTTP-only, Secure, SameSite=Lax.
+Dual-cookie strategy. The backend sets an HTTP-only `session` cookie (RS256 JWT) for backend API authentication. The frontend creates a parallel `iron-session` cookie (`evmauth-dashboard`) for Next.js middleware route protection. The iron-session stores `{ personId, email, displayName }` -- just enough for middleware to decide redirects. Both cookies have an 8-hour max age.
 
-Use `middleware.ts` to protect `/dashboard/*` routes: redirect to `/auth/login` if no valid session.
+Next.js API routes (`/api/auth/login`, `/api/auth/signup`, `/api/auth/logout`) act as the bridge -- they call the backend, forward the backend's `Set-Cookie` header, then create/destroy the iron-session. The `/api/auth/me` route returns the iron-session data for client-side session checks.
+
+The API proxy (`/api/proxy/[...path]`) forwards `Cookie` headers to the backend and `Set-Cookie` headers from backend responses, ensuring the backend session cookie flows through transparently.
+
+`middleware.ts` protects `/dashboard/*` routes: redirects to `/auth/login` if no valid iron-session. Also redirects authenticated users away from `/auth/login` to `/dashboard`.
 
 #### Data Fetching
 
@@ -1445,10 +1457,11 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Frontend: Tiltfile TypeScript service auto-discovery (extend `discover_services` for `ts/services/`)
 - [x] Docker init scripts for `registry` and `analytics` schemas
 - [x] Workspace resolver set to v3 for edition 2024 compatibility
-- [ ] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
+- [x] Service `.env.example` files: rewrite all with empty secrets, add missing vars (JWT, wallets URL); create wallets and dashboard env files
+- [x] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
 - [ ] Platform EVMAuth contract deployment and `PLATFORM_CONTRACT_ADDRESS` config
 - [ ] Capability token minting on new org creation
-- [ ] Frontend: Dashboard login page, dashboard shell, org overview page
+- [x] Frontend: Dashboard login page, dashboard shell, org overview page
 
 ### Phase 2 -- App Registrations & Contracts
 

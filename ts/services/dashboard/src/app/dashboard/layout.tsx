@@ -1,3 +1,6 @@
+'use client';
+
+import { UserMenu } from '@/components/UserMenu';
 import { AppShell, Group, NavLink, Text } from '@mantine/core';
 import type { ReactNode } from 'react';
 
@@ -9,6 +12,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <Text fw={700} size="lg">
                         EVMAuth
                     </Text>
+                    <UserMenu />
                 </Group>
             </AppShell.Header>
 
