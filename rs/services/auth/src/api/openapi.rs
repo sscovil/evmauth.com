@@ -1,6 +1,8 @@
 use pagination::PaginatedResponse;
 use utoipa::OpenApi;
 
+use crate::api::handlers::auth::{LoginRequest, SignupRequest, TokenResponse};
+use crate::api::handlers::me::UpdateMeRequest;
 use crate::domain::OrgVisibility;
 use crate::dto::request::{
     CreateOrg, CreateOrgMember, CreatePerson, UpdateOrg, UpdateOrgMember, UpdatePerson,
@@ -18,6 +20,13 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
     paths(
         // Health
         crate::api::handlers::health::health_check,
+        // Auth
+        crate::api::handlers::auth::signup,
+        crate::api::handlers::auth::login,
+        crate::api::handlers::auth::logout,
+        // Me
+        crate::api::handlers::me::get_me,
+        crate::api::handlers::me::update_me,
         // People
         crate::api::handlers::people::list_people,
         crate::api::handlers::people::get_person,
@@ -38,6 +47,11 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
     ),
     components(
         schemas(
+            // Auth DTOs
+            SignupRequest,
+            LoginRequest,
+            TokenResponse,
+            UpdateMeRequest,
             // Request DTOs
             CreatePerson,
             UpdatePerson,
@@ -59,6 +73,8 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
     ),
     tags(
         (name = "health", description = "Health check endpoints"),
+        (name = "auth", description = "Authentication endpoints"),
+        (name = "me", description = "Current user profile endpoints"),
         (name = "people", description = "Person management endpoints"),
         (name = "orgs", description = "Organization management endpoints"),
         (name = "org_members", description = "Organization member management endpoints")

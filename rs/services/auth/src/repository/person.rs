@@ -47,10 +47,10 @@ impl<'a> PersonRepository for PersonRepositoryImpl<'a> {
         .fetch_one(self.pool)
         .await
         .map_err(|e| {
-            if let Some(db_err) = e.as_database_error() {
-                if db_err.is_unique_violation() {
-                    return RepositoryError::ConstraintViolation("Email already exists".to_string());
-                }
+            if let Some(db_err) = e.as_database_error()
+                && db_err.is_unique_violation()
+            {
+                return RepositoryError::ConstraintViolation("Email already exists".to_string());
             }
             RepositoryError::Database(e)
         })?;
@@ -76,7 +76,7 @@ impl<'a> PersonRepository for PersonRepositoryImpl<'a> {
 
     async fn list(&self, filter: PersonFilter, page: Page) -> Result<Vec<Person>, RepositoryError> {
         let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT id, display_name, description, auth_provider_name, auth_provider_ref, primary_email, created_at, updated_at FROM auth.people WHERE 1=1"
+            "SELECT id, display_name, description, auth_provider_name, auth_provider_ref, primary_email, created_at, updated_at FROM auth.people WHERE 1=1",
         );
 
         if let Some(email) = &filter.email {
@@ -135,10 +135,10 @@ impl<'a> PersonRepository for PersonRepositoryImpl<'a> {
         .fetch_one(self.pool)
         .await
         .map_err(|e| {
-            if let Some(db_err) = e.as_database_error() {
-                if db_err.is_unique_violation() {
-                    return RepositoryError::ConstraintViolation("Email already exists".to_string());
-                }
+            if let Some(db_err) = e.as_database_error()
+                && db_err.is_unique_violation()
+            {
+                return RepositoryError::ConstraintViolation("Email already exists".to_string());
             }
             RepositoryError::Database(e)
         })?;

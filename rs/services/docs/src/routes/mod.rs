@@ -1,10 +1,10 @@
 use crate::{aggregator::Aggregator, config::Config};
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use std::sync::Arc;
 

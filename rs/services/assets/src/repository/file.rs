@@ -47,10 +47,10 @@ impl FileRepository for FileRepositoryImpl<'_> {
         .fetch_one(self.pool)
         .await
         .map_err(|e| {
-            if let Some(db_err) = e.as_database_error() {
-                if db_err.is_unique_violation() {
-                    return RepositoryError::ConstraintViolation("Object key already exists".to_string());
-                }
+            if let Some(db_err) = e.as_database_error()
+                && db_err.is_unique_violation()
+            {
+                return RepositoryError::ConstraintViolation("Object key already exists".to_string());
             }
             RepositoryError::Database(e)
         })?;
@@ -75,7 +75,7 @@ impl FileRepository for FileRepositoryImpl<'_> {
 
     async fn list(&self, filter: FileFilter, page: Page) -> Result<Vec<File>, RepositoryError> {
         let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT id, org_id, uploader_id, object_key, file_name, mime_type, size_bytes, created_at, updated_at FROM assets.files WHERE 1=1"
+            "SELECT id, org_id, uploader_id, object_key, file_name, mime_type, size_bytes, created_at, updated_at FROM assets.files WHERE 1=1",
         );
 
         if let Some(org_id) = &filter.org_id {

@@ -111,7 +111,7 @@ impl<'a> OrgMemberRepository for OrgMemberRepositoryImpl<'a> {
         page: Page,
     ) -> Result<Vec<OrgMember>, RepositoryError> {
         let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT org_id, member_id, role, created_at, updated_at FROM auth.orgs_people WHERE 1=1"
+            "SELECT org_id, member_id, role, created_at, updated_at FROM auth.orgs_people WHERE 1=1",
         );
 
         if let Some(org_id) = filter.org_id {

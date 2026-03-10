@@ -1,18 +1,18 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
-use pagination::{with_pagination, PaginatedResponse};
+use pagination::{PaginatedResponse, with_pagination};
 use serde::Deserialize;
 use utoipa::IntoParams;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::response::EntityResponse;
 use crate::repository::entity::{EntityRepository, EntityRepositoryImpl};
 use crate::repository::filter::EntityFilter;
-use crate::AppState;
 
 #[with_pagination]
 #[derive(Debug, Deserialize, IntoParams)]

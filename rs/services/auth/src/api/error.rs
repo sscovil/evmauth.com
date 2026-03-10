@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 
@@ -11,6 +11,7 @@ use crate::repository::RepositoryError;
 pub enum ApiError {
     NotFound,
     BadRequest(String),
+    Unauthorized(String),
     Internal(String),
 }
 
@@ -19,6 +20,7 @@ impl IntoResponse for ApiError {
         let (status, message) = match self {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
@@ -45,6 +47,12 @@ impl From<RepositoryError> for ApiError {
                 ApiError::BadRequest(format!("Constraint violation: {}", msg))
             }
         }
+    }
+}
+
+impl From<crate::jwt::JwtError> for ApiError {
+    fn from(err: crate::jwt::JwtError) -> Self {
+        ApiError::Internal(format!("JWT error: {err}"))
     }
 }
 

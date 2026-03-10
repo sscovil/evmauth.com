@@ -46,10 +46,10 @@ impl<'a> OrgRepository for OrgRepositoryImpl<'a> {
         .fetch_one(self.pool)
         .await
         .map_err(|e| {
-            if let Some(db_err) = e.as_database_error() {
-                if db_err.is_foreign_key_violation() {
-                    return RepositoryError::ConstraintViolation("Invalid owner_id".to_string());
-                }
+            if let Some(db_err) = e.as_database_error()
+                && db_err.is_foreign_key_violation()
+            {
+                return RepositoryError::ConstraintViolation("Invalid owner_id".to_string());
             }
             RepositoryError::Database(e)
         })?;
@@ -75,7 +75,7 @@ impl<'a> OrgRepository for OrgRepositoryImpl<'a> {
 
     async fn list(&self, filter: OrgFilter, page: Page) -> Result<Vec<Org>, RepositoryError> {
         let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT id, display_name, description, owner_id, visibility::text, created_at, updated_at FROM auth.orgs WHERE 1=1"
+            "SELECT id, display_name, description, owner_id, visibility::text, created_at, updated_at FROM auth.orgs WHERE 1=1",
         );
 
         if let Some(owner_id) = filter.owner_id {
@@ -136,10 +136,10 @@ impl<'a> OrgRepository for OrgRepositoryImpl<'a> {
         .fetch_one(self.pool)
         .await
         .map_err(|e| {
-            if let Some(db_err) = e.as_database_error() {
-                if db_err.is_foreign_key_violation() {
-                    return RepositoryError::ConstraintViolation("Invalid owner_id".to_string());
-                }
+            if let Some(db_err) = e.as_database_error()
+                && db_err.is_foreign_key_violation()
+            {
+                return RepositoryError::ConstraintViolation("Invalid owner_id".to_string());
             }
             RepositoryError::Database(e)
         })?;

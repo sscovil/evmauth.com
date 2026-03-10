@@ -5,6 +5,8 @@ use std::env;
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
+    pub jwt_private_key_pem: Option<String>,
+    pub jwt_public_key_pem: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -55,6 +57,8 @@ impl Config {
                     .unwrap_or(6379),
                 password: env::var("REDIS_PASSWORD").ok(),
             },
+            jwt_private_key_pem: env::var("JWT_PRIVATE_KEY_PEM").ok(),
+            jwt_public_key_pem: env::var("JWT_PUBLIC_KEY_PEM").ok(),
         };
 
         Ok(config)

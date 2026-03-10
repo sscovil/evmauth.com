@@ -1,15 +1,18 @@
 [workspace]
+resolver = "3"
 members = [
     "services/assets",
     "services/auth",
     "services/db",
     "services/docs",
     "services/gateway",
+    "services/wallets",
     "crates/pagination",
     "crates/pagination-macros",
     "crates/postgres",
     "crates/redis-client",
     "crates/service-discovery",
+    "crates/turnkey",
 ]
 
 [workspace.package]
@@ -51,6 +54,7 @@ async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
+jsonwebtoken = "9.3"
 
 # OpenAPI documentation
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
@@ -66,3 +70,4 @@ pagination = { path = "crates/pagination" }
 postgres = { path = "crates/postgres" }
 redis-client = { path = "crates/redis-client" }
 service-discovery = { path = "crates/service-discovery" }
+turnkey = { path = "crates/turnkey" }

@@ -1,4 +1,4 @@
-use redis::{aio::ConnectionManager, Client};
+use redis::{Client, aio::ConnectionManager};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]

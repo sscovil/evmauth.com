@@ -1,23 +1,23 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use axum_extra::extract::Multipart;
 use image::GenericImageView;
-use pagination::{with_pagination, PaginatedResponse};
+use pagination::{PaginatedResponse, with_pagination};
 use serde::Deserialize;
 use utoipa::IntoParams;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::request::{CreateImage, UpdateImage};
 use crate::dto::response::ImageResponse;
 use crate::repository::filter::ImageFilter;
 use crate::repository::{ImageRepository, ImageRepositoryImpl};
 use crate::s3::S3Client;
-use crate::AppState;
 
 const MAX_IMAGE_SIZE: usize = 20 * 1024 * 1024; // 20MB
 

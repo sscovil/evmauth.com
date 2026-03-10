@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at\n            FROM wallets.person_app_wallets\n            WHERE person_id = $1 AND app_registration_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "person_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_registration_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "wallet_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "turnkey_account_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5344d09db66d33c878d2e053a0e7394ce6d0badf2d4ca5b12d401fe045a6b80b"
+}

@@ -1,12 +1,12 @@
 use axum::{
-    routing::{get, put},
-    Json, Router,
+    Json, Router, middleware as axum_middleware,
+    routing::{get, post, put},
 };
 use utoipa::OpenApi;
 
 use crate::AppState;
 
-use super::handlers::{health, org_members, orgs, people};
+use super::handlers::{auth as auth_handlers, health, me, org_members, orgs, people};
 
 #[cfg(feature = "internal-api")]
 use super::handlers::internal;
@@ -25,10 +25,14 @@ async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
     Json(ApiDoc::openapi())
 }
 
-pub fn api_routes(_state: AppState) -> Router<AppState> {
+pub fn api_routes(state: AppState) -> Router<AppState> {
     let router = Router::new()
         .route("/openapi.json", get(openapi_spec))
         .route("/health", get(health::health_check))
+        // Auth routes (no session required)
+        .route("/auth/signup", post(auth_handlers::signup))
+        .route("/auth/login", post(auth_handlers::login))
+        .route("/auth/logout", post(auth_handlers::logout))
         // People routes
         .route(
             "/people",
@@ -56,6 +60,16 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
         .route(
             "/orgs/{org_id}/members/{member_id}",
             put(org_members::update_org_member).delete(org_members::delete_org_member),
+        )
+        // Protected "me" routes
+        .route(
+            "/me",
+            get(me::get_me)
+                .patch(me::update_me)
+                .route_layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    crate::middleware::require_session,
+                )),
         );
 
     // Conditionally add internal routes with /internal prefix
@@ -65,7 +79,9 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
         .route(
             "/internal/entities/{id}",
             get(internal::get_entity).delete(internal::delete_entity),
-        );
+        )
+        .route("/internal/people/{id}", get(internal::get_person_internal))
+        .route("/internal/orgs/{id}", get(internal::get_org_internal));
 
     router
 }

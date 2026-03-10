@@ -1,4 +1,5 @@
-use auth::{api, config, AppState};
+use auth::{AppState, api, config, jwt};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,8 +18,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis = redis_client::create_client(&config.redis.connection_string()).await?;
     tracing::info!("Redis connection established");
 
+    // Load JWT keys (optional in dev)
+    let jwt_keys = match (&config.jwt_private_key_pem, &config.jwt_public_key_pem) {
+        (Some(private), Some(public)) => {
+            let keys = jwt::JwtKeys::from_pem(private.as_bytes(), public.as_bytes())?;
+            tracing::info!("JWT keys loaded");
+            Some(Arc::new(keys))
+        }
+        _ => {
+            tracing::warn!("JWT keys not configured - auth endpoints will be unavailable");
+            None
+        }
+    };
+
     // Create application state
-    let state = AppState { db, redis };
+    let state = AppState {
+        db,
+        redis,
+        jwt_keys,
+    };
 
     // Create the router
     let router = api::create_router(state.clone()).with_state(state);

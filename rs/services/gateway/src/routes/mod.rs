@@ -1,8 +1,8 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::proxy::handler::{proxy_handler, AppState};
+use crate::proxy::handler::{AppState, proxy_handler};
 
 async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // Use service-discovery crate for health checking

@@ -1,4 +1,4 @@
-use assets::{api, config, s3::S3Client, AppState};
+use assets::{AppState, api, config, s3::S3Client};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

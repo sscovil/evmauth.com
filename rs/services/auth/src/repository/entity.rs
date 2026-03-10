@@ -51,7 +51,7 @@ impl<'a> EntityRepository for EntityRepositoryImpl<'a> {
 
     async fn list(&self, filter: EntityFilter, page: Page) -> Result<Vec<Entity>, RepositoryError> {
         let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT e.id, e.tableoid::regclass::text AS table, e.display_name, e.description, e.created_at, e.updated_at FROM auth.entities* e WHERE 1=1"
+            "SELECT e.id, e.tableoid::regclass::text AS table, e.display_name, e.description, e.created_at, e.updated_at FROM auth.entities* e WHERE 1=1",
         );
 
         if let Some(entity_type) = &filter.entity_type {

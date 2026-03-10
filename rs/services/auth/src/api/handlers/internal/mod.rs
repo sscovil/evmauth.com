@@ -5,6 +5,10 @@
 
 pub mod entities;
 pub mod openapi;
+pub mod orgs;
+pub mod people;
 
 pub use entities::*;
 pub use openapi::InternalApiDoc;
+pub use orgs::*;
+pub use people::*;
