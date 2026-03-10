@@ -1,21 +1,21 @@
 {
-  "name": "evmauth",
-  "private": true,
-  "scripts": {
-    "check": "biome check .",
-    "check:fix": "biome check --write .",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
-    "build": "pnpm -r run build",
-    "dev": "pnpm -r run dev",
-    "clean": "pnpm -r run clean"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
-    "typescript": "^5.7.0"
-  },
-  "packageManager": "pnpm@9.15.0",
-  "engines": {
-    "node": ">=22.0.0"
-  }
+    "name": "evmauth",
+    "private": true,
+    "scripts": {
+        "check": "biome check . && pnpm -r run typecheck",
+        "check:fix": "biome check --write . && pnpm -r run typecheck",
+        "format": "biome format --write .",
+        "lint": "biome lint .",
+        "build": "pnpm -r run build",
+        "dev": "pnpm -r run dev",
+        "clean": "pnpm -r run clean"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^1.9.0",
+        "typescript": "^5.7.0"
+    },
+    "packageManager": "pnpm@9.15.0",
+    "engines": {
+        "node": ">=22.0.0"
+    }
 }

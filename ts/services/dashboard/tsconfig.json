@@ -1,10 +1,12 @@
 {
-  "extends": "@evmauth/tsconfig/nextjs.json",
-  "compilerOptions": {
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+    "extends": "@evmauth/tsconfig/nextjs.json",
+    "compilerOptions": {
+        "paths": {
+            "@/*": ["./src/*"]
+        },
+        "allowJs": true,
+        "noEmit": true
+    },
+    "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+    "exclude": ["node_modules"]
 }

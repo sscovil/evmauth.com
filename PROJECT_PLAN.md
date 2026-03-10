@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-10 (rev 5)
+> **Last updated:** 2026-03-10 (rev 6)
 
 ---
 
@@ -60,7 +60,7 @@ evmauth.com/
 ├── Tiltfile                       # Tilt orchestration (auto-discovers services)
 ├── docker-compose.yml             # Infrastructure: PostgreSQL, Redis, MinIO
 ├── docker/                        # Docker build scripts
-├── check.sh                       # Quality checks: fmt, clippy, test
+├── check.sh                       # Quality checks: biome, tsc, fmt, clippy, test
 ├── .env.example
 ├── .env
 ├── CLAUDE.md                      # Development guidelines
@@ -107,7 +107,7 @@ evmauth.com/
 │   │   │           ├── entity.rs
 │   │   │           ├── filter.rs
 │   │   │           └── pagination.rs
-│   │   ├── wallets/               # TO BUILD: Wallet lifecycle & Turnkey management
+│   │   ├── wallets/               # PARTIAL: Wallet lifecycle & Turnkey management
 │   │   │   ├── Cargo.toml
 │   │   │   ├── service.json
 │   │   │   └── src/
@@ -210,7 +210,7 @@ evmauth.com/
 │       ├── postgres/              # EXISTING: PgPool creation + config
 │       ├── redis-client/          # EXISTING: Redis ConnectionManager wrapper
 │       ├── service-discovery/     # EXISTING: Service auto-discovery + health checks
-│       ├── turnkey/               # TO BUILD: Turnkey API client
+│       ├── turnkey/               # EXISTING: Turnkey API client
 │       │   ├── Cargo.toml
 │       │   └── src/
 │       │       ├── lib.rs
@@ -224,13 +224,13 @@ evmauth.com/
 │               ├── provider.rs
 │               ├── beacon.rs
 │               └── erc6909.rs
-├── ts/                            # TO BUILD: TypeScript frontend (PNPM workspace root)
+├── ts/                            # EXISTING: TypeScript frontend (PNPM workspace root)
 │   ├── pnpm-workspace.yaml        # Workspace definition
 │   ├── package.json               # Root scripts (e.g. pnpm check)
 │   ├── biome.json                 # Shared Biome config
 │   ├── tsconfig.json              # Base TypeScript config
 │   ├── services/                  # Next.js apps (each is an independent app)
-│   │   └── dashboard/             # TO BUILD: Deployer dashboard + hosted auth UI
+│   │   └── dashboard/             # PARTIAL: Deployer dashboard + hosted auth UI
 │   │       ├── Dockerfile
 │   │       ├── package.json
 │   │       ├── service.json       # Tilt metadata (ports, depends_on, etc.)
@@ -317,8 +317,9 @@ evmauth.com/
 | Dependency | Purpose | Notes |
 |---|---|---|
 | `alloy` (full) | Ethereum interaction | Provider, contract calls, ABI encoding |
-| `jsonwebtoken` | JWT sign/verify | RS256; load private key from env |
 | `axum-test` | Integration tests | |
+
+Note: `jsonwebtoken` is already in workspace dependencies (used by auth service).
 
 ### Frontend (PNPM Workspace: `ts/`)
 
@@ -1431,19 +1432,22 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Docs service: OpenAPI aggregation, Swagger UI
 - [x] Shared crates: postgres, redis-client, pagination, pagination-macros, service-discovery
 - [x] Assets service scaffolding: S3 client, domain types, DTOs, repository stubs
-- [x] Quality checks script (`check.sh`): fmt, clippy, test
+- [x] Quality checks script (`check.sh`): biome check, tsc, fmt, clippy, test
 - [x] Production Dockerfile (multi-stage build)
-- [ ] Turnkey crate: create sub-org, create delegated account user, passkey auth
-- [ ] Wallets service: scaffold, `wallets` schema migrations, org wallet + person sub-org internal APIs
-- [ ] Auth service: deployer signup/login (passkey + OAuth), session JWT, HTTP-only cookie
-- [ ] Auth service: `GET /me`, `PATCH /me` endpoints, `RequireSession` middleware
-- [ ] Auth service: internal APIs for cross-service person/org lookup
+- [x] Turnkey crate: create sub-org, create delegated account user, passkey auth, request stamping
+- [x] Wallets service: scaffold, `wallets` schema migrations, org wallet + person sub-org + person app wallet internal APIs
+- [x] Auth service: session JWT utilities, `RequireSession` middleware, auth code migration
+- [x] Auth service: internal APIs for cross-service person/org lookup (`/internal/people/{id}`, `/internal/orgs/{id}`)
+- [x] Frontend: PNPM workspace scaffolding (`ts/pnpm-workspace.yaml`, root `package.json`, `biome.json`, `tsconfig.json`)
+- [x] Frontend: `@evmauth/ui` package (Mantine theme, ThemeProvider), `@evmauth/tsconfig` package (base + nextjs configs)
+- [x] Frontend: Dashboard service scaffolding (`ts/services/dashboard/`), `service.json`, `Dockerfile.dev`, API proxy route
+- [x] Frontend: Tiltfile TypeScript service auto-discovery (extend `discover_services` for `ts/services/`)
+- [x] Docker init scripts for `registry` and `analytics` schemas
+- [x] Workspace resolver set to v3 for edition 2024 compatibility
+- [ ] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
+- [ ] Auth service: `GET /me`, `PATCH /me` endpoints
 - [ ] Platform EVMAuth contract deployment and `PLATFORM_CONTRACT_ADDRESS` config
 - [ ] Capability token minting on new org creation
-- [ ] Frontend: PNPM workspace scaffolding (`ts/pnpm-workspace.yaml`, root `package.json`, `biome.json`, `tsconfig.json`)
-- [ ] Frontend: `@evmauth/ui` package (Mantine theme, shared components), `@evmauth/tsconfig` package
-- [ ] Frontend: Dashboard service scaffolding (`ts/services/dashboard/`), `service.json`, Dockerfile
-- [ ] Frontend: Tiltfile TypeScript service auto-discovery (extend `discover_services` for `ts/services/`)
 - [ ] Frontend: Dashboard login page, dashboard shell, org overview page
 
 ### Phase 2 -- App Registrations & Contracts
@@ -1611,4 +1615,4 @@ SESSION_SECRET=...
 - TypeScript services follow the same auto-discovery pattern: add a directory under `ts/services/` with a `package.json` and `service.json` and the Tiltfile picks it up.
 - Use PNPM workspace protocol (`"workspace:*"`) for all internal package references in `ts/`. Never publish shared packages to npm -- they are workspace-only.
 - The `ts/packages/ui` package owns the Mantine theme. All services import the theme from `@evmauth/ui` -- never duplicate theme configuration.
-- Use the existing `check.sh` script for quality checks. It already supports both Rust (`cargo fmt --check`, `cargo clippy`, `cargo test`) and TypeScript (`pnpm check` in each package with a `package.json`).
+- Use the existing `check.sh` script for quality checks. It runs TypeScript checks (`biome check` + `pnpm -r run typecheck`) at the `ts/` workspace root, then Rust checks (`cargo fmt --check`, `cargo clippy --workspace`, `cargo test --workspace`) at the `rs/` workspace root.

@@ -9,14 +9,14 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 
 interface ThemeProviderProps {
-	children: ReactNode;
+    children: ReactNode;
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-	return (
-		<MantineProvider theme={theme} defaultColorScheme="auto">
-			<Notifications position="top-right" />
-			{children}
-		</MantineProvider>
-	);
+    return (
+        <MantineProvider theme={theme} defaultColorScheme="auto">
+            <Notifications position="top-right" />
+            {children}
+        </MantineProvider>
+    );
 }
