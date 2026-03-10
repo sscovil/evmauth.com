@@ -7,6 +7,7 @@ pub struct Config {
     pub redis: redis_client::RedisConfig,
     pub jwt_private_key_pem: Option<String>,
     pub jwt_public_key_pem: Option<String>,
+    pub wallets_service_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,6 +60,8 @@ impl Config {
             },
             jwt_private_key_pem: env::var("JWT_PRIVATE_KEY_PEM").ok(),
             jwt_public_key_pem: env::var("JWT_PUBLIC_KEY_PEM").ok(),
+            wallets_service_url: env::var("WALLETS_SERVICE_URL")
+                .unwrap_or_else(|_| "http://int-wallets:8000".to_string()),
         };
 
         Ok(config)

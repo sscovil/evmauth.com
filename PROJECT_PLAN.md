@@ -1437,6 +1437,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Turnkey crate: create sub-org, create delegated account user, passkey auth, request stamping
 - [x] Wallets service: scaffold, `wallets` schema migrations, org wallet + person sub-org + person app wallet internal APIs
 - [x] Auth service: session JWT utilities, `RequireSession` middleware, auth code migration
+- [x] Auth service: `GET /me`, `PATCH /me` endpoints (protected by RequireSession middleware)
 - [x] Auth service: internal APIs for cross-service person/org lookup (`/internal/people/{id}`, `/internal/orgs/{id}`)
 - [x] Frontend: PNPM workspace scaffolding (`ts/pnpm-workspace.yaml`, root `package.json`, `biome.json`, `tsconfig.json`)
 - [x] Frontend: `@evmauth/ui` package (Mantine theme, ThemeProvider), `@evmauth/tsconfig` package (base + nextjs configs)
@@ -1445,7 +1446,6 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Docker init scripts for `registry` and `analytics` schemas
 - [x] Workspace resolver set to v3 for edition 2024 compatibility
 - [ ] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
-- [ ] Auth service: `GET /me`, `PATCH /me` endpoints
 - [ ] Platform EVMAuth contract deployment and `PLATFORM_CONTRACT_ADDRESS` config
 - [ ] Capability token minting on new org creation
 - [ ] Frontend: Dashboard login page, dashboard shell, org overview page

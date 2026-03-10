@@ -1,7 +1,7 @@
 use pagination::PaginatedResponse;
 use utoipa::OpenApi;
 
-use crate::api::handlers::auth::{LoginRequest, SignupRequest, TokenResponse};
+use crate::api::handlers::auth::{LoginRequest, PasskeyAttestation, SignupRequest, TokenResponse};
 use crate::api::handlers::me::UpdateMeRequest;
 use crate::domain::OrgVisibility;
 use crate::dto::request::{
@@ -51,6 +51,7 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
             SignupRequest,
             LoginRequest,
             TokenResponse,
+            PasskeyAttestation,
             UpdateMeRequest,
             // Request DTOs
             CreatePerson,

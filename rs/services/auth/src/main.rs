@@ -31,11 +31,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Create HTTP client for internal service calls
+    let http_client = reqwest::Client::new();
+
     // Create application state
     let state = AppState {
         db,
         redis,
         jwt_keys,
+        http_client,
+        config: Arc::new(config),
     };
 
     // Create the router

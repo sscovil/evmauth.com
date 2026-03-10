@@ -124,6 +124,7 @@ dependencies = [
  "postgres",
  "redis",
  "redis-client",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",

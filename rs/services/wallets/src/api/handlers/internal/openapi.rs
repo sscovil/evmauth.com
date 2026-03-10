@@ -1,5 +1,6 @@
 use utoipa::OpenApi;
 
+use crate::dto::request::person_turnkey_ref::PasskeyAttestationParam;
 use crate::dto::request::{CreateOrgWallet, CreatePersonAppWallet, CreatePersonTurnkeyRef};
 use crate::dto::response::{OrgWalletResponse, PersonAppWalletResponse, PersonTurnkeyRefResponse};
 
@@ -20,6 +21,7 @@ use super::signing::SignRequest;
         schemas(
             CreateOrgWallet,
             CreatePersonTurnkeyRef,
+            PasskeyAttestationParam,
             CreatePersonAppWallet,
             SignRequest,
             OrgWalletResponse,

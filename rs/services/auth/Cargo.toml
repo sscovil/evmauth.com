@@ -45,6 +45,9 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 
+# HTTP client (for internal service calls)
+reqwest = { workspace = true }
+
 # JWT
 jsonwebtoken = { workspace = true }
 

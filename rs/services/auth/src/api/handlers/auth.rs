@@ -5,11 +5,29 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::api::error::ApiError;
+use crate::domain::OrgVisibility;
 use crate::dto::request::CreatePerson;
+use crate::repository::filter::OrgFilter;
+use crate::repository::org::{OrgRepository, OrgRepositoryImpl};
+use crate::repository::pagination::Page;
 use crate::repository::person::{PersonRepository, PersonRepositoryImpl};
 use crate::{AppState, jwt};
+
+/// Passkey attestation data from the frontend (via @turnkey/sdk-browser)
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, utoipa::ToSchema)]
+pub struct PasskeyAttestation {
+    /// Name for this authenticator
+    #[schema(example = "my-passkey", format = "string")]
+    pub authenticator_name: String,
+    /// The challenge used during WebAuthn registration
+    #[schema(example = "base64-encoded-challenge", format = "string")]
+    pub challenge: String,
+    /// The attestation object from WebAuthn
+    pub attestation: serde_json::Value,
+}
 
 /// Deployer signup request
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
@@ -20,12 +38,14 @@ pub struct SignupRequest {
     /// Primary email address
     #[schema(example = "alice.adams@example.com", format = "email")]
     pub primary_email: String,
-    /// Authentication provider name (e.g., "turnkey", "google")
+    /// Passkey attestation data (for passkey-based signup via Turnkey)
+    pub attestation: Option<PasskeyAttestation>,
+    /// Authentication provider name (for OAuth-based signup, e.g. "google")
     #[schema(example = "turnkey", format = "string")]
-    pub auth_provider_name: String,
-    /// Authentication provider reference (user ID from provider)
+    pub auth_provider_name: Option<String>,
+    /// Authentication provider reference / user ID from provider
     #[schema(example = "usr_abc123xyz", format = "string")]
-    pub auth_provider_ref: String,
+    pub auth_provider_ref: Option<String>,
 }
 
 /// Login request
@@ -56,7 +76,17 @@ pub struct TokenResponse {
     pub expires_in: i64,
 }
 
+/// Response from wallets service person sub-org creation
+#[derive(Debug, serde::Deserialize)]
+struct WalletsPersonSubOrgResponse {
+    #[serde(rename = "turnkey_sub_org_id")]
+    turnkey_sub_org_id: String,
+}
+
 /// Deployer signup
+///
+/// Creates a new person account, provisions a Turnkey sub-org and personal
+/// workspace wallet, and issues a session JWT.
 #[utoipa::path(
     post,
     path = "/auth/signup",
@@ -77,18 +107,147 @@ pub async fn signup(
         .as_ref()
         .ok_or_else(|| ApiError::Internal("JWT not configured".to_string()))?;
 
-    let repo = PersonRepositoryImpl::new(&state.db);
+    // Validate: must have either passkey attestation or OAuth provider fields
+    let (auth_provider_name, authenticators_json, api_key_name, api_public_key) =
+        if let Some(attestation) = &body.attestation {
+            // Passkey-based signup via Turnkey
+            let authenticators = vec![serde_json::json!({
+                "authenticator_name": attestation.authenticator_name,
+                "challenge": attestation.challenge,
+                "attestation": attestation.attestation,
+            })];
+            (
+                "turnkey".to_string(),
+                Some(authenticators),
+                None::<String>,
+                None::<String>,
+            )
+        } else if let (Some(provider_name), Some(_provider_ref)) =
+            (&body.auth_provider_name, &body.auth_provider_ref)
+        {
+            // OAuth-based signup -- no Turnkey authenticators, will use API key flow
+            (provider_name.clone(), None, None, None)
+        } else {
+            return Err(ApiError::BadRequest(
+                "Either attestation or both auth_provider_name and auth_provider_ref are required"
+                    .to_string(),
+            ));
+        };
 
-    let person = repo
+    // Step 1: Call wallets service to create a Turnkey sub-org for this person
+    // We use a placeholder person_id (will be replaced after person creation)
+    // Actually, we need the person_id first for the sub-org, so we create the person first
+    // but we need the sub-org ID for the person's auth_provider_ref...
+    // Solution: create sub-org with a temporary person_id, then create person with the sub-org ID
+    let wallets_url = &state.config.wallets_service_url;
+    let temp_person_id = Uuid::new_v4();
+
+    let mut sub_org_request = serde_json::json!({
+        "person_id": temp_person_id,
+        "sub_org_name": format!("person-{temp_person_id}"),
+        "root_user_name": body.primary_email,
+    });
+
+    if let Some(authenticators) = authenticators_json {
+        sub_org_request["authenticators"] = serde_json::Value::Array(authenticators);
+    }
+
+    if let Some(ref key_name) = api_key_name {
+        sub_org_request["api_key_name"] = serde_json::Value::String(key_name.clone());
+    }
+    if let Some(ref pub_key) = api_public_key {
+        sub_org_request["api_public_key"] = serde_json::Value::String(pub_key.clone());
+    }
+
+    let sub_org_response = state
+        .http_client
+        .post(format!("{wallets_url}/internal/person-sub-org"))
+        .json(&sub_org_request)
+        .send()
+        .await
+        .map_err(|e| ApiError::Internal(format!("Failed to call wallets service: {e}")))?;
+
+    if !sub_org_response.status().is_success() {
+        let status = sub_org_response.status();
+        let error_body = sub_org_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown error".to_string());
+        return Err(ApiError::Internal(format!(
+            "Wallets service returned {status}: {error_body}"
+        )));
+    }
+
+    let sub_org: WalletsPersonSubOrgResponse = sub_org_response
+        .json()
+        .await
+        .map_err(|e| ApiError::Internal(format!("Failed to parse wallets response: {e}")))?;
+
+    // Step 2: Create person in auth.people
+    // For passkey signup, auth_provider_ref is the Turnkey sub-org ID
+    // For OAuth signup, use the provided auth_provider_ref
+    let auth_provider_ref = if body.attestation.is_some() {
+        sub_org.turnkey_sub_org_id.clone()
+    } else {
+        body.auth_provider_ref
+            .clone()
+            .ok_or_else(|| ApiError::BadRequest("auth_provider_ref is required".to_string()))?
+    };
+
+    let person_repo = PersonRepositoryImpl::new(&state.db);
+    let person = person_repo
         .create(CreatePerson {
             display_name: body.display_name,
             description: None,
-            auth_provider_name: body.auth_provider_name,
-            auth_provider_ref: body.auth_provider_ref,
+            auth_provider_name,
+            auth_provider_ref,
             primary_email: body.primary_email,
         })
         .await?;
 
+    // Step 3: Find the auto-created personal workspace org
+    let org_repo = OrgRepositoryImpl::new(&state.db);
+    let personal_orgs = org_repo
+        .list(
+            OrgFilter::new()
+                .owner_id(person.id)
+                .visibility(OrgVisibility::Personal),
+            Page {
+                first: Some(1),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let personal_org = personal_orgs.first().ok_or_else(|| {
+        ApiError::Internal("Personal workspace org was not auto-created".to_string())
+    })?;
+
+    // Step 4: Call wallets service to create an org wallet for the personal workspace
+    let org_wallet_request = serde_json::json!({
+        "org_id": personal_org.id,
+        "sub_org_name": format!("org-{}", personal_org.id),
+    });
+
+    let org_wallet_response = state
+        .http_client
+        .post(format!("{wallets_url}/internal/org-wallet"))
+        .json(&org_wallet_request)
+        .send()
+        .await
+        .map_err(|e| ApiError::Internal(format!("Failed to create org wallet: {e}")))?;
+
+    if !org_wallet_response.status().is_success() {
+        let status = org_wallet_response.status();
+        let error_body = org_wallet_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown error".to_string());
+        tracing::error!("Failed to create org wallet: {status} {error_body}");
+        // Log but don't fail signup -- the wallet can be created later
+    }
+
+    // Step 5: Issue session JWT
     let duration_hours = 8;
     let token = jwt::create_session_token(jwt_keys, person.id, duration_hours)
         .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
@@ -138,7 +297,7 @@ pub async fn login(
             crate::repository::PersonFilter::new()
                 .email(&body.primary_email)
                 .auth_provider(&body.auth_provider_name),
-            crate::repository::Page {
+            Page {
                 first: Some(1),
                 ..Default::default()
             },
