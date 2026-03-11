@@ -1,0 +1,11 @@
+[package]
+name = "chain"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+alloy = { workspace = true }
+dotenvy = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

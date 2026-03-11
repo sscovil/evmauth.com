@@ -25,6 +25,9 @@ redis-client = { workspace = true }
 # Pagination
 pagination = { workspace = true }
 
+# Chain
+chain = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }

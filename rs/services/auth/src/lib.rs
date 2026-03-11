@@ -20,4 +20,5 @@ pub struct AppState {
     pub jwt_keys: Option<Arc<JwtKeys>>,
     pub http_client: reqwest::Client,
     pub config: Arc<Config>,
+    pub chain: Arc<chain::ChainClient>,
 }

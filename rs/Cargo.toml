@@ -13,6 +13,7 @@ members = [
     "crates/redis-client",
     "crates/service-discovery",
     "crates/turnkey",
+    "crates/chain",
 ]
 
 [workspace.package]
@@ -65,7 +66,11 @@ syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
 
+# Blockchain
+alloy = { version = "1", features = ["providers", "provider-http", "contract", "sol-types", "network", "rpc-types", "transports"] }
+
 # Internal crates
+chain = { path = "crates/chain" }
 pagination = { path = "crates/pagination" }
 postgres = { path = "crates/postgres" }
 redis-client = { path = "crates/redis-client" }

@@ -1,13 +1,14 @@
 use serde::Deserialize;
 use std::env;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
     pub jwt_private_key_pem: Option<String>,
     pub jwt_public_key_pem: Option<String>,
     pub wallets_service_url: String,
+    pub chain: chain::ChainConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -62,6 +63,8 @@ impl Config {
             jwt_public_key_pem: env::var("JWT_PUBLIC_KEY_PEM").ok(),
             wallets_service_url: env::var("WALLETS_SERVICE_URL")
                 .unwrap_or_else(|_| "http://int-wallets:8000".to_string()),
+            chain: chain::ChainConfig::from_env()
+                .map_err(|e| anyhow::anyhow!("Chain config error: {e}"))?,
         };
 
         Ok(config)

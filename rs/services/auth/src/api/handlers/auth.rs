@@ -245,6 +245,66 @@ pub async fn signup(
             .unwrap_or_else(|_| "unknown error".to_string());
         tracing::error!("Failed to create org wallet: {status} {error_body}");
         // Log but don't fail signup -- the wallet can be created later
+    } else {
+        // Step 4b: Mint capability token for the new org wallet (best-effort)
+        if let Ok(wallet_info) = org_wallet_response.json::<serde_json::Value>().await
+            && let Some(wallet_address_str) = wallet_info.get("address").and_then(|v| v.as_str())
+        {
+            match wallet_address_str.parse::<chain::Address>() {
+                Ok(wallet_address) => {
+                    // TOKEN_ID 1 = API access capability token
+                    let token_id = chain::U256::from(1);
+                    let amount = chain::U256::from(1);
+                    let calldata =
+                        chain::ChainClient::encode_mint(wallet_address, token_id, amount);
+
+                    let mint_request = serde_json::json!({
+                        "to": format!("{}", state.chain.platform_contract_address()),
+                        "data": format!("{calldata}"),
+                        "chain_id": state.chain.config().chain_id,
+                    });
+
+                    match state
+                        .http_client
+                        .post(format!("{wallets_url}/internal/sign"))
+                        .json(&mint_request)
+                        .send()
+                        .await
+                    {
+                        Ok(resp) if resp.status().is_success() => {
+                            tracing::info!(
+                                org_id = %personal_org.id,
+                                wallet = wallet_address_str,
+                                "Capability token mint submitted"
+                            );
+                        }
+                        Ok(resp) => {
+                            let status = resp.status();
+                            let body = resp
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "unknown error".to_string());
+                            tracing::warn!(
+                                org_id = %personal_org.id,
+                                "Capability token mint failed: {status} {body}"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                org_id = %personal_org.id,
+                                "Capability token mint request failed: {e}"
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        org_id = %personal_org.id,
+                        "Invalid wallet address from wallets service: {e}"
+                    );
+                }
+            }
+        }
     }
 
     // Step 5: Issue session JWT
