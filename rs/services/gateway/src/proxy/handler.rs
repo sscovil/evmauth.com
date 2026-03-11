@@ -138,5 +138,7 @@ async fn forward_request(
         response = response.header(key, value);
     }
 
-    Ok(response.body(Body::from(body_bytes)).unwrap())
+    response
+        .body(Body::from(body_bytes))
+        .map_err(|e| ProxyError::BadGateway(format!("Failed to build response: {e}")))
 }
