@@ -1801,7 +1801,6 @@ name = "chain"
 version = "0.0.0"
 dependencies = [
  "alloy",
- "dotenvy",
  "thiserror",
  "tracing",
 ]
@@ -4947,7 +4946,6 @@ name = "service-discovery"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dotenvy",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,11 +1,10 @@
 use std::env;
-use turnkey::client::TurnkeyConfig;
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
-    pub turnkey: TurnkeyConfig,
+    pub turnkey: turnkey::client::TurnkeyConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +54,12 @@ impl Config {
                     .unwrap_or(6379),
                 password: env::var("REDIS_PASSWORD").ok(),
             },
-            turnkey: TurnkeyConfig::from_env()?,
+            turnkey: turnkey::client::TurnkeyConfig {
+                api_base_url: env::var("TURNKEY_API_BASE_URL")?,
+                parent_org_id: env::var("TURNKEY_PARENT_ORG_ID")?,
+                api_public_key: env::var("TURNKEY_API_PUBLIC_KEY")?,
+                api_private_key: env::var("TURNKEY_API_PRIVATE_KEY")?,
+            },
         };
 
         Ok(config)

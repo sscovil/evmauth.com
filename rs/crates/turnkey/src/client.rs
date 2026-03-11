@@ -12,29 +12,15 @@ use crate::sub_org::{
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF_MS: u64 = 100;
 
-/// Configuration for the Turnkey client
+/// Configuration for the Turnkey client.
+/// Services are responsible for populating this from their own config source
+/// (environment variables, config files, etc.).
 #[derive(Debug, Clone)]
 pub struct TurnkeyConfig {
     pub api_base_url: String,
     pub parent_org_id: String,
     pub api_public_key: String,
     pub api_private_key: String,
-}
-
-impl TurnkeyConfig {
-    pub fn from_env() -> Result<Self, TurnkeyError> {
-        let config = Self {
-            api_base_url: std::env::var("TURNKEY_API_BASE_URL")
-                .map_err(|_| TurnkeyError::Config("TURNKEY_API_BASE_URL not set".to_string()))?,
-            parent_org_id: std::env::var("TURNKEY_PARENT_ORG_ID")
-                .map_err(|_| TurnkeyError::Config("TURNKEY_PARENT_ORG_ID not set".to_string()))?,
-            api_public_key: std::env::var("TURNKEY_API_PUBLIC_KEY")
-                .map_err(|_| TurnkeyError::Config("TURNKEY_API_PUBLIC_KEY not set".to_string()))?,
-            api_private_key: std::env::var("TURNKEY_API_PRIVATE_KEY")
-                .map_err(|_| TurnkeyError::Config("TURNKEY_API_PRIVATE_KEY not set".to_string()))?,
-        };
-        Ok(config)
-    }
 }
 
 /// Turnkey API client with retry logic
