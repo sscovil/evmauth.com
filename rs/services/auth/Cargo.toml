@@ -25,8 +25,8 @@ redis-client = { workspace = true }
 # Pagination
 pagination = { workspace = true }
 
-# Chain
-chain = { workspace = true }
+# EVM
+evm = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

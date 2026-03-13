@@ -6,7 +6,7 @@ pub mod repository;
 
 use std::sync::Arc;
 
-use chain::ChainClient;
+use evm::EvmClient;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
@@ -14,7 +14,7 @@ use sqlx::PgPool;
 pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
-    pub chain: Arc<ChainClient>,
+    pub evm: Arc<EvmClient>,
     pub http_client: reqwest::Client,
     pub config: Arc<config::Config>,
 }

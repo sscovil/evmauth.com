@@ -4,12 +4,12 @@ pub mod evmauth;
 
 pub use alloy::primitives::{Address, Bytes, U256};
 pub use beacon::encode_beacon_proxy_deploy;
-pub use client::{ChainClient, ChainConfig};
+pub use client::{EvmClient, EvmConfig};
 
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum ChainError {
+pub enum EvmError {
     #[error("Configuration error: {0}")]
     Config(String),
 

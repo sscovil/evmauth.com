@@ -18,15 +18,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis = redis_client::create_client(&config.redis.connection_string()).await?;
     tracing::info!("Redis connection established");
 
-    let chain = chain::ChainClient::new(config.chain.clone())?;
-    tracing::info!("Chain client initialized");
+    let evm_client = evm::EvmClient::new(config.evm.clone())?;
+    tracing::info!("EVM client initialized");
 
     let http_client = reqwest::Client::new();
 
     let state = AppState {
         db,
         redis,
-        chain: Arc::new(chain),
+        evm: Arc::new(evm_client),
         http_client,
         config: Arc::new(config),
     };

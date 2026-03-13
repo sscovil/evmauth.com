@@ -14,7 +14,7 @@ members = [
     "crates/redis-client",
     "crates/service-discovery",
     "crates/turnkey",
-    "crates/chain",
+    "crates/evm",
 ]
 
 [workspace.package]
@@ -72,7 +72,7 @@ proc-macro2 = "1.0"
 alloy = { version = "1", features = ["providers", "provider-http", "contract", "sol-types", "network", "rpc-types", "transports"] }
 
 # Internal crates
-chain = { path = "crates/chain" }
+evm = { path = "crates/evm" }
 pagination = { path = "crates/pagination" }
 postgres = { path = "crates/postgres" }
 redis-client = { path = "crates/redis-client" }

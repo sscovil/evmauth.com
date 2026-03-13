@@ -31,14 +31,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Create chain client
-    let chain_client = chain::ChainClient::new(config.chain.clone())
-        .map_err(|e| anyhow::anyhow!("Failed to create chain client: {e}"))?;
+    // Create EVM client
+    let evm_client = evm::EvmClient::new(config.evm.clone())
+        .map_err(|e| anyhow::anyhow!("Failed to create EVM client: {e}"))?;
     tracing::info!(
-        contract = %config.chain.platform_contract_address,
-        chain_id = config.chain.chain_id,
-        rpc_url = %config.chain.rpc_url,
-        "Chain client initialized"
+        contract = %config.evm.platform_contract_address,
+        chain_id = config.evm.chain_id,
+        rpc_url = %config.evm.rpc_url,
+        "EVM client initialized"
     );
 
     // Create HTTP client for internal service calls
@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         jwt_keys,
         http_client,
         config: Arc::new(config),
-        chain: Arc::new(chain_client),
+        evm: Arc::new(evm_client),
     };
 
     // Create the router

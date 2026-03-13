@@ -5,8 +5,7 @@ use alloy::sol_types::SolConstructor;
 
 /// OpenZeppelin BeaconProxy creation bytecode (hex-encoded with 0x prefix).
 /// Source: @openzeppelin/contracts/proxy/beacon/BeaconProxy.sol
-const BEACON_PROXY_BYTECODE_HEX: &str =
-    include_str!("../artifacts/BeaconProxy.bin");
+const BEACON_PROXY_BYTECODE_HEX: &str = include_str!("../artifacts/BeaconProxy.bin");
 
 sol! {
     /// Minimal BeaconProxy constructor ABI for encoding constructor arguments.

@@ -2,13 +2,13 @@ use alloy::primitives::Address;
 use alloy::providers::{ProviderBuilder, RootProvider, fillers::*};
 use alloy::transports::http::reqwest::Url;
 
-use crate::ChainError;
+use crate::EvmError;
 
-/// Configuration for the chain client.
+/// Configuration for the EVM client.
 /// Services are responsible for populating this from their own config source
 /// (environment variables, config files, etc.).
 #[derive(Debug, Clone)]
-pub struct ChainConfig {
+pub struct EvmConfig {
     pub rpc_url: String,
     pub platform_contract_address: Address,
     pub chain_id: u64,
@@ -22,18 +22,18 @@ type HttpProvider = FillProvider<
     RootProvider,
 >;
 
-/// Read-only chain client wrapping an Alloy HTTP provider
-pub struct ChainClient {
+/// Read-only EVM client wrapping an Alloy HTTP provider
+pub struct EvmClient {
     provider: HttpProvider,
-    config: ChainConfig,
+    config: EvmConfig,
 }
 
-impl ChainClient {
-    pub fn new(config: ChainConfig) -> Result<Self, ChainError> {
+impl EvmClient {
+    pub fn new(config: EvmConfig) -> Result<Self, EvmError> {
         let url: Url = config
             .rpc_url
             .parse()
-            .map_err(|e| ChainError::Config(format!("Invalid RPC URL: {e}")))?;
+            .map_err(|e| EvmError::Config(format!("Invalid RPC URL: {e}")))?;
 
         let provider = ProviderBuilder::new().connect_http(url);
 
@@ -44,7 +44,7 @@ impl ChainClient {
         &self.provider
     }
 
-    pub fn config(&self) -> &ChainConfig {
+    pub fn config(&self) -> &EvmConfig {
         &self.config
     }
 

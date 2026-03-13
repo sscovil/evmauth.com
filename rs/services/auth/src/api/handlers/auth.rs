@@ -250,18 +250,17 @@ pub async fn signup(
         if let Ok(wallet_info) = org_wallet_response.json::<serde_json::Value>().await
             && let Some(wallet_address_str) = wallet_info.get("address").and_then(|v| v.as_str())
         {
-            match wallet_address_str.parse::<chain::Address>() {
+            match wallet_address_str.parse::<evm::Address>() {
                 Ok(wallet_address) => {
                     // TOKEN_ID 1 = API access capability token
-                    let token_id = chain::U256::from(1);
-                    let amount = chain::U256::from(1);
-                    let calldata =
-                        chain::ChainClient::encode_mint(wallet_address, token_id, amount);
+                    let token_id = evm::U256::from(1);
+                    let amount = evm::U256::from(1);
+                    let calldata = evm::EvmClient::encode_mint(wallet_address, token_id, amount);
 
                     let mint_request = serde_json::json!({
-                        "to": format!("{}", state.chain.platform_contract_address()),
+                        "to": format!("{}", state.evm.platform_contract_address()),
                         "data": format!("{calldata}"),
-                        "chain_id": state.chain.config().chain_id,
+                        "chain_id": state.evm.config().chain_id,
                     });
 
                     match state

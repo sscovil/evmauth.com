@@ -72,8 +72,8 @@ pub async fn deploy_contract(
         .map_err(|e| ApiError::Internal(format!("Failed to parse wallets response: {e}")))?;
 
     // Step 2: Encode BeaconProxy deployment bytecode
-    let beacon_address = state.chain.platform_contract_address();
-    let deploy_bytecode = chain::encode_beacon_proxy_deploy(beacon_address, chain::Bytes::new());
+    let beacon_address = state.evm.platform_contract_address();
+    let deploy_bytecode = evm::encode_beacon_proxy_deploy(beacon_address, evm::Bytes::new());
     let calldata_hex = format!("0x{}", alloy::hex::encode(&deploy_bytecode));
 
     // Step 3: Send deployment transaction via wallets service
@@ -100,7 +100,7 @@ pub async fn deploy_contract(
 
     // Step 4: Insert contract record
     let repo = ContractRepositoryImpl::new(&state.db);
-    let chain_id = state.chain.config().chain_id.to_string();
+    let chain_id = state.evm.config().chain_id.to_string();
 
     let contract = repo
         .create(CreateContractParams {
@@ -216,8 +216,8 @@ pub async fn grant_operator(
     }
 
     // Encode setOperator(platformOperator, true) calldata
-    let platform_operator = state.chain.platform_contract_address();
-    let calldata = chain::ChainClient::encode_set_operator(platform_operator, true);
+    let platform_operator = state.evm.platform_contract_address();
+    let calldata = evm::EvmClient::encode_set_operator(platform_operator, true);
     let calldata_hex = format!("0x{}", alloy::hex::encode(&calldata));
 
     // Send transaction via wallets service
@@ -292,8 +292,8 @@ pub async fn revoke_operator(
     }
 
     // Encode setOperator(platformOperator, false) calldata
-    let platform_operator = state.chain.platform_contract_address();
-    let calldata = chain::ChainClient::encode_set_operator(platform_operator, false);
+    let platform_operator = state.evm.platform_contract_address();
+    let calldata = evm::EvmClient::encode_set_operator(platform_operator, false);
     let calldata_hex = format!("0x{}", alloy::hex::encode(&calldata));
 
     // Send transaction via wallets service

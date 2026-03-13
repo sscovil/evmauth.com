@@ -6,7 +6,7 @@ use alloy::primitives::Address;
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
-    pub chain: chain::ChainConfig,
+    pub evm: evm::EvmConfig,
     pub wallets_service_url: String,
 }
 
@@ -57,7 +57,7 @@ impl Config {
                     .unwrap_or(6379),
                 password: env::var("REDIS_PASSWORD").ok(),
             },
-            chain: chain::ChainConfig {
+            evm: evm::EvmConfig {
                 rpc_url: env::var("EVM_RPC_URL")
                     .unwrap_or_else(|_| "http://localhost:8545".to_string()),
                 platform_contract_address: env::var("EVM_PLATFORM_CONTRACT_ADDRESS")?

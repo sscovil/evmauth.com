@@ -49,7 +49,7 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 
 # Blockchain
-chain = { workspace = true }
+evm = { workspace = true }
 alloy = { workspace = true }
 
 # Turnkey

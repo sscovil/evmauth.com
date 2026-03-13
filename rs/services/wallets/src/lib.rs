@@ -6,7 +6,7 @@ pub mod repository;
 
 use std::sync::Arc;
 
-use chain::ChainClient;
+use evm::EvmClient;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use turnkey::TurnkeyClient;
@@ -16,5 +16,5 @@ pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
     pub turnkey: Arc<TurnkeyClient>,
-    pub chain: Arc<ChainClient>,
+    pub evm: Arc<EvmClient>,
 }

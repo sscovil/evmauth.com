@@ -217,11 +217,11 @@ evmauth.com/
 │       │       ├── client.rs
 │       │       ├── sub_org.rs
 │       │       └── signing.rs
-│       └── chain/                 # EXISTING: Alloy-based chain interaction
+│       └── evm/                   # EXISTING: Alloy-based EVM interaction
 │           ├── Cargo.toml
 │           └── src/
-│               ├── lib.rs         # ChainError enum, re-exports (Address, Bytes, U256)
-│               ├── client.rs      # ChainConfig, ChainClient (read-only Alloy HTTP provider)
+│               ├── lib.rs         # EvmError enum, re-exports (Address, Bytes, U256)
+│               ├── client.rs      # EvmConfig, EvmClient (read-only Alloy HTTP provider)
 │               └── evmauth.rs     # sol! bindings (balanceOf, isOperator, mint), encode_mint()
 ├── ts/                            # EXISTING: TypeScript frontend (PNPM workspace root)
 │   ├── pnpm-workspace.yaml        # Workspace definition
@@ -317,7 +317,7 @@ evmauth.com/
 | `async-trait` 0.1 | Async trait support | For repository traits |
 | `utoipa` 5 + `utoipa-axum` 0.1 | OpenAPI docs | Auto-generated from annotations |
 | `redis` 1.0.1 | Cache | ConnectionManager abstraction |
-| `alloy` 1.x | Ethereum interaction | Provider, contract calls, ABI encoding (via chain crate) |
+| `alloy` 1.x | Ethereum interaction | Provider, contract calls, ABI encoding (via evm crate) |
 
 ### Backend (To Add)
 
@@ -776,7 +776,7 @@ pub struct AppState {
     pub jwt_keys: Option<Arc<JwtKeys>>,   // RS256 keypair (optional in dev)
     pub http_client: reqwest::Client,     // Internal service calls
     pub config: Arc<Config>,
-    pub chain: Arc<chain::ChainClient>,   // Read-only chain client for platform contract
+    pub evm: Arc<evm::EvmClient>,         // Read-only EVM client for platform contract
 }
 ```
 
@@ -857,7 +857,7 @@ Manages app registrations, deployed contracts, operator grants, and the authoriz
 pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
-    pub chain: Arc<ChainProvider>,
+    pub evm: Arc<EvmClient>,
     pub config: Arc<Config>,
 }
 ```
@@ -887,7 +887,7 @@ Indexes contract events from the chain and logs API requests. Exposes metrics fo
 pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
-    pub chain: Arc<ChainProvider>,  // For event indexing
+    pub evm: Arc<EvmClient>,        // For event indexing
     pub config: Arc<Config>,
 }
 ```
@@ -965,25 +965,25 @@ impl TurnkeyClient {
 }
 ```
 
-### Chain Crate (`rs/crates/chain/`) -- Existing
+### EVM Crate (`rs/crates/evm/`) -- Existing
 
 Uses Alloy to interact with Radius. Provides a read-only HTTP provider and typed EVMAuth6909 contract bindings. Used by the auth service (for capability token minting calldata) and will be used by the registry and analytics services.
 
-`ChainConfig` is a plain data struct -- it does not read environment variables. The consuming service is responsible for populating it from its own config source.
+`EvmConfig` is a plain data struct -- it does not read environment variables. The consuming service is responsible for populating it from its own config source.
 
-Signing is not handled by the chain crate. The wallets service owns Turnkey signing; other services encode calldata via `encode_mint()` and POST it to the wallets service `/internal/sign` endpoint.
+Signing is not handled by the evm crate. The wallets service owns Turnkey signing; other services encode calldata via `encode_mint()` and POST it to the wallets service `/internal/sign` endpoint.
 
 ```rust
-pub struct ChainConfig {
+pub struct EvmConfig {
     pub rpc_url: String,
     pub platform_contract_address: Address,
     pub chain_id: u64,
 }
 
-pub struct ChainClient { /* Alloy HTTP provider + config */ }
+pub struct EvmClient { /* Alloy HTTP provider + config */ }
 
-impl ChainClient {
-    pub fn new(config: ChainConfig) -> Result<Self, ChainError>;
+impl EvmClient {
+    pub fn new(config: EvmConfig) -> Result<Self, EvmError>;
     pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256>;
     pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool>;
     pub fn encode_mint(to: Address, token_id: U256, amount: U256) -> Bytes;  // static
@@ -1258,7 +1258,7 @@ The platform maintains one **beacon contract** on Radius that points to the curr
 2. Deployer navigates to "Deploy Contract" (`POST /registry/orgs/{org_id}/contracts`)
 3. Registry service:
    a. Calls wallets internal API to look up org wallet address
-   b. Calls `chain::deploy_beacon_proxy(org_wallet_address, beacon_address)` using the platform operator wallet
+   b. Calls `evm::deploy_beacon_proxy(org_wallet_address, beacon_address)` using the platform operator wallet
    c. Inserts `registry.contracts` row
 4. Dashboard displays the new contract with a block explorer link
 
@@ -1467,7 +1467,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Workspace resolver set to v3 for edition 2024 compatibility
 - [x] Service `.env.example` files: rewrite all with empty secrets, add missing vars (JWT, wallets URL); create wallets and dashboard env files
 - [x] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
-- [x] Chain crate: Alloy HTTP provider, EVMAuth6909 bindings (balanceOf, isOperator, encode_mint)
+- [x] EVM crate: Alloy HTTP provider, EVMAuth6909 bindings (balanceOf, isOperator, encode_mint)
 - [x] Platform contract config (`PLATFORM_CONTRACT_ADDRESS`, `RADIUS_RPC_URL`, `RADIUS_CHAIN_ID`) in auth service
 - [x] Capability token minting on new org creation (best-effort mint via wallets service `/internal/sign`)
 - [x] Crate convention: shared crates accept config structs, never read environment variables directly
@@ -1477,7 +1477,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 
 - [x] Registry service: scaffold, `registry` schema migrations
 - [x] App registration domain, DTOs, repository, CRUD handlers
-- [x] Chain crate: `encode_set_operator`, `encode_beacon_proxy_deploy` (BeaconProxy bytecode)
+- [x] EVM crate: `encode_set_operator`, `encode_beacon_proxy_deploy` (BeaconProxy bytecode)
 - [x] Contract domain, DTOs, repository, handlers
 - [x] Contract deployment endpoint (registry calls wallets internal API for wallet lookup)
 - [x] Operator grant/revoke endpoints + Turnkey signing via wallets service
@@ -1504,7 +1504,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] ERC-712 request signing: define domain, type, and canonical digest
 - [ ] `RequireErc712Auth` middleware in registry service
 - [ ] `GET /registry/accounts/{address}` endpoint
-- [ ] `balances_for` implementation in chain crate
+- [ ] `balances_for` implementation in evm crate
 - [ ] `is_operator` check for delegate flow
 - [ ] Registry calls analytics internal API to log requests
 - [ ] Deployer-facing SDK (TypeScript): wraps Turnkey delegated account signing into a single `client.accounts(address, contract)` call
@@ -1624,9 +1624,9 @@ SESSION_SECRET=...
 - Shared crates (`rs/crates/`) must never read environment variables or call `dotenvy`. They accept plain config structs; the consuming service is responsible for populating them from env vars or any other source.
 - Always run `sqlx prepare` after changing queries to keep the offline query cache (`.sqlx/`) in sync. Use `tilt trigger sqlx-prepare` in local dev.
 - Use `sqlx::query_as!` macros for all DB queries -- no string-interpolated SQL.
-- The `chain` crate should be integration-tested against a local Anvil fork of Radius, not a mock. Add an Anvil service to docker-compose for tests.
+- The `evm` crate should be integration-tested against a local Anvil fork of Radius, not a mock. Add an Anvil service to docker-compose for tests.
 - Turnkey API calls should be wrapped in retry logic with exponential backoff (3 attempts). Use `tower`'s retry layer or implement manually in the Turnkey client.
-- The platform operator wallet is a Turnkey-managed wallet within the parent org. All signing goes through the Turnkey client via the wallets service. The `chain` crate is read-only (no signer); services encode calldata via `ChainClient::encode_mint()` and POST to the wallets service `/internal/sign` endpoint. No raw private keys in any environment variable.
+- The platform operator wallet is a Turnkey-managed wallet within the parent org. All signing goes through the Turnkey client via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/sign` endpoint. No raw private keys in any environment variable.
 - All contract addresses, tx hashes, and wallet addresses are stored as `TEXT` in Postgres (not `BYTEA`), EIP-55 checksummed format. Normalise on insert.
 - The `/auth/end-user/login` page must validate `redirect_uri` against `callback_urls` **before** initiating the OAuth flow -- never after -- to prevent open redirect attacks. Auth service calls registry internal API to validate.
 - Authorization codes in `auth.auth_codes` are stored as `SHA-256(plaintext_code)`. The plaintext is returned once in the redirect and never stored. On token exchange, hash the submitted code and look it up -- never store or log the plaintext code.

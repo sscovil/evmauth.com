@@ -23,16 +23,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let turnkey = turnkey::TurnkeyClient::new(config.turnkey)?;
     tracing::info!("Turnkey client initialized");
 
-    // Create chain client
-    let chain = chain::ChainClient::new(config.chain)?;
-    tracing::info!("Chain client initialized");
+    // Create EVM client
+    let evm_client = evm::EvmClient::new(config.evm)?;
+    tracing::info!("EVM client initialized");
 
     // Create application state
     let state = AppState {
         db,
         redis,
         turnkey: Arc::new(turnkey),
-        chain: Arc::new(chain),
+        evm: Arc::new(evm_client),
     };
 
     // Create the router

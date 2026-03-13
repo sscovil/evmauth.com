@@ -2,8 +2,8 @@ use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol;
 use alloy::sol_types::SolCall;
 
-use crate::ChainError;
-use crate::client::ChainClient;
+use crate::EvmError;
+use crate::client::EvmClient;
 
 // Generate type-safe bindings for the subset of EVMAuth6909 we need
 sol! {
@@ -16,27 +16,27 @@ sol! {
     }
 }
 
-impl ChainClient {
+impl EvmClient {
     /// Query the balance of `account` for token `token_id` on the platform contract.
-    pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256, ChainError> {
+    pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256, EvmError> {
         let contract = IEVMAuth6909::new(self.platform_contract_address(), self.provider());
         let balance = contract
             .balanceOf(account, token_id)
             .call()
             .await
-            .map_err(|e| ChainError::Contract(format!("balanceOf call failed: {e}")))?;
+            .map_err(|e| EvmError::Contract(format!("balanceOf call failed: {e}")))?;
 
         Ok(balance)
     }
 
     /// Check whether `spender` is an operator for `owner` on the platform contract.
-    pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool, ChainError> {
+    pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool, EvmError> {
         let contract = IEVMAuth6909::new(self.platform_contract_address(), self.provider());
         let is_op = contract
             .isOperator(owner, spender)
             .call()
             .await
-            .map_err(|e| ChainError::Contract(format!("isOperator call failed: {e}")))?;
+            .map_err(|e| EvmError::Contract(format!("isOperator call failed: {e}")))?;
 
         Ok(is_op)
     }

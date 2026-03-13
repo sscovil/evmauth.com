@@ -54,6 +54,6 @@ utoipa-axum = { workspace = true }
 
 # Blockchain
 alloy = { workspace = true }
-chain = { workspace = true }
+evm = { workspace = true }
 
 [dev-dependencies]

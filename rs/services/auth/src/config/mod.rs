@@ -8,7 +8,7 @@ pub struct Config {
     pub jwt_private_key_pem: Option<String>,
     pub jwt_public_key_pem: Option<String>,
     pub wallets_service_url: String,
-    pub chain: chain::ChainConfig,
+    pub evm: evm::EvmConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,7 +63,7 @@ impl Config {
             jwt_public_key_pem: env::var("JWT_PUBLIC_KEY_PEM").ok(),
             wallets_service_url: env::var("WALLETS_SERVICE_URL")
                 .unwrap_or_else(|_| "http://int-wallets:8000".to_string()),
-            chain: chain::ChainConfig {
+            evm: evm::EvmConfig {
                 rpc_url: env::var("EVM_RPC_URL")
                     .unwrap_or_else(|_| "http://localhost:8545".to_string()),
                 platform_contract_address: env::var("EVM_PLATFORM_CONTRACT_ADDRESS")?

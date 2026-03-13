@@ -1,5 +1,5 @@
 [package]
-name = "chain"
+name = "evm"
 edition.workspace = true
 rust-version.workspace = true
 publish = false

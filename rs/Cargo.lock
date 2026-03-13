@@ -952,9 +952,9 @@ dependencies = [
  "async-trait",
  "axum 0.8.7",
  "base64",
- "chain",
  "chrono",
  "dotenvy",
+ "evm",
  "jsonwebtoken",
  "pagination",
  "postgres",
@@ -1797,15 +1797,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chain"
-version = "0.0.0"
-dependencies = [
- "alloy",
- "thiserror",
- "tracing",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2380,6 +2371,15 @@ dependencies = [
  "concurrent-queue",
  "parking",
  "pin-project-lite",
+]
+
+[[package]]
+name = "evm"
+version = "0.0.0"
+dependencies = [
+ "alloy",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -4403,9 +4403,9 @@ dependencies = [
  "async-trait",
  "axum 0.8.7",
  "base64",
- "chain",
  "chrono",
  "dotenvy",
+ "evm",
  "getrandom 0.3.4",
  "pagination",
  "postgres",
@@ -6046,9 +6046,9 @@ dependencies = [
  "async-trait",
  "axum 0.8.7",
  "base64",
- "chain",
  "chrono",
  "dotenvy",
+ "evm",
  "pagination",
  "postgres",
  "redis",

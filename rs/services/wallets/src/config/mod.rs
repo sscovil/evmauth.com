@@ -7,7 +7,7 @@ pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
     pub turnkey: turnkey::client::TurnkeyConfig,
-    pub chain: chain::ChainConfig,
+    pub evm: evm::EvmConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ impl Config {
                 api_public_key: env::var("TURNKEY_API_PUBLIC_KEY")?,
                 api_private_key: env::var("TURNKEY_API_PRIVATE_KEY")?,
             },
-            chain: chain::ChainConfig {
+            evm: evm::EvmConfig {
                 rpc_url: env::var("EVM_RPC_URL")
                     .unwrap_or_else(|_| "http://localhost:8545".to_string()),
                 platform_contract_address: env::var("EVM_PLATFORM_CONTRACT_ADDRESS")?

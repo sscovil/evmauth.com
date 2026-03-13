@@ -61,10 +61,10 @@ impl From<pagination::PaginationError> for ApiError {
     }
 }
 
-impl From<chain::ChainError> for ApiError {
-    fn from(err: chain::ChainError) -> Self {
-        tracing::error!("Chain error: {:?}", err);
-        ApiError::Internal(format!("Chain operation failed: {err}"))
+impl From<evm::EvmError> for ApiError {
+    fn from(err: evm::EvmError) -> Self {
+        tracing::error!("EVM error: {:?}", err);
+        ApiError::Internal(format!("EVM operation failed: {err}"))
     }
 }
 
