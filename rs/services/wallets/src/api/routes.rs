@@ -57,7 +57,8 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
             "/internal/person-app-wallet/{id}",
             get(internal::person_app_wallets::get_person_app_wallet),
         )
-        .route("/internal/sign", post(internal::signing::sign_payload));
+        .route("/internal/sign", post(internal::signing::sign_payload))
+        .route("/internal/send-tx", post(internal::send_tx::send_tx));
 
     router
 }

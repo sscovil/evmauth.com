@@ -1475,13 +1475,15 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 
 ### Phase 2 -- App Registrations & Contracts
 
-- [ ] Registry service: scaffold, `registry` schema migrations
-- [ ] App registration domain, DTOs, repository, CRUD handlers
-- [ ] Chain crate: Add `deploy_beacon_proxy` method (uses wallets service for signing)
-- [ ] Contract domain, DTOs, repository, handlers
-- [ ] Contract deployment endpoint (registry calls wallets internal API for wallet lookup)
-- [ ] Operator grant/revoke endpoints + Turnkey signing via wallets service
-- [ ] Relevant token ID configuration per app registration
+- [x] Registry service: scaffold, `registry` schema migrations
+- [x] App registration domain, DTOs, repository, CRUD handlers
+- [x] Chain crate: `encode_set_operator`, `encode_beacon_proxy_deploy` (BeaconProxy bytecode)
+- [x] Contract domain, DTOs, repository, handlers
+- [x] Contract deployment endpoint (registry calls wallets internal API for wallet lookup)
+- [x] Operator grant/revoke endpoints + Turnkey signing via wallets service
+- [x] Relevant token ID configuration per app registration
+- [x] Wallets service: `POST /internal/send-tx` endpoint (sign + broadcast via Turnkey + Alloy)
+- [x] Registry internal API: `GET /internal/apps/by-client-id/{client_id}`, `GET /internal/contracts/{id}`
 - [ ] Dashboard: App registration pages, contract deployment wizard, operator grant UI
 
 ### Phase 3 -- End User Auth

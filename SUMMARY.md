@@ -36,5 +36,5 @@ Next milestones: app registration and contract deployment flows, end-user PKCE a
 - **ERC-6909 over ERC-1155**: Simpler interface, lower gas costs, native operator delegation without approval transactions.
 - **Beacon proxy pattern**: One implementation contract, unlimited proxies. Atomic upgrades across all customers.
 - **No client secrets**: Access to the authorization API is controlled by on-chain token holdings. Nothing to leak, nothing to rotate.
-- **ERC-712 request signing**: API authentication uses typed structured data signatures, verified on-chain. Replay-resistant via timestamp nonce.
+- **ERC-712 request signing**: API authentication uses typed structured data signatures, verifiable off-chain. Replay-resistant via timestamp nonce.
 - **Turnkey custodial wallets**: Hardware-isolated keys with policy-scoped signing. Delegated accounts restrict platform signing to ERC-712 payloads only.

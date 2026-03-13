@@ -12,6 +12,7 @@ sol! {
         function balanceOf(address account, uint256 id) external view returns (uint256);
         function isOperator(address owner, address spender) external view returns (bool);
         function mint(address to, uint256 id, uint256 amount) external;
+        function setOperator(address operator, bool approved) external returns (bool);
     }
 }
 
@@ -47,6 +48,12 @@ impl ChainClient {
             id: token_id,
             amount,
         };
+        Bytes::from(call.abi_encode())
+    }
+
+    /// ABI-encode a `setOperator(operator, approved)` call for signing by the wallets service.
+    pub fn encode_set_operator(operator: Address, approved: bool) -> Bytes {
+        let call = IEVMAuth6909::setOperatorCall { operator, approved };
         Bytes::from(call.abi_encode())
     }
 }

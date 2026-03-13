@@ -7,6 +7,7 @@ pub mod openapi;
 pub mod org_wallets;
 pub mod person_app_wallets;
 pub mod person_sub_orgs;
+pub mod send_tx;
 pub mod signing;
 
 pub use openapi::InternalApiDoc;

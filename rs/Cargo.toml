@@ -7,6 +7,7 @@ members = [
     "services/docs",
     "services/gateway",
     "services/wallets",
+    "services/registry",
     "crates/pagination",
     "crates/pagination-macros",
     "crates/postgres",
@@ -54,6 +55,7 @@ thiserror = "2.0"
 async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+getrandom = "0.3"
 uuid = { version = "1.0", features = ["serde", "v4"] }
 jsonwebtoken = "9.3"
 

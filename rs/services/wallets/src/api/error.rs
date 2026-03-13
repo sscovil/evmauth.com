@@ -61,6 +61,13 @@ impl From<pagination::PaginationError> for ApiError {
     }
 }
 
+impl From<chain::ChainError> for ApiError {
+    fn from(err: chain::ChainError) -> Self {
+        tracing::error!("Chain error: {:?}", err);
+        ApiError::Internal(format!("Chain operation failed: {err}"))
+    }
+}
+
 impl From<turnkey::TurnkeyError> for ApiError {
     fn from(err: turnkey::TurnkeyError) -> Self {
         tracing::error!("Turnkey API error: {:?}", err);

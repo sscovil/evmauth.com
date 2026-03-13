@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, org_id, app_registration_id, name, address, chain_id, beacon_address, deploy_tx_hash, deployed_at, created_at, updated_at\n            FROM registry.contracts\n            WHERE address = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "org_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_registration_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "chain_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "beacon_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "deploy_tx_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "deployed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c56949cfac705059b93039e5e137a0c01a8104cfadc9a504080a5f10458b93e7"
+}

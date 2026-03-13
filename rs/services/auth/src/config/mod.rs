@@ -64,15 +64,15 @@ impl Config {
             wallets_service_url: env::var("WALLETS_SERVICE_URL")
                 .unwrap_or_else(|_| "http://int-wallets:8000".to_string()),
             chain: chain::ChainConfig {
-                rpc_url: env::var("RADIUS_RPC_URL")
+                rpc_url: env::var("EVM_RPC_URL")
                     .unwrap_or_else(|_| "http://localhost:8545".to_string()),
-                platform_contract_address: env::var("PLATFORM_CONTRACT_ADDRESS")?
+                platform_contract_address: env::var("EVM_PLATFORM_CONTRACT_ADDRESS")?
                     .parse()
-                    .map_err(|e| anyhow::anyhow!("Invalid PLATFORM_CONTRACT_ADDRESS: {e}"))?,
-                chain_id: env::var("RADIUS_CHAIN_ID")
+                    .map_err(|e| anyhow::anyhow!("Invalid EVM_PLATFORM_CONTRACT_ADDRESS: {e}"))?,
+                chain_id: env::var("EVM_CHAIN_ID")
                     .unwrap_or_else(|_| "31337".to_string())
                     .parse()
-                    .map_err(|e| anyhow::anyhow!("Invalid RADIUS_CHAIN_ID: {e}"))?,
+                    .map_err(|e| anyhow::anyhow!("Invalid EVM_CHAIN_ID: {e}"))?,
             },
         };
 

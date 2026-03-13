@@ -48,6 +48,10 @@ uuid = { workspace = true }
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 
+# Blockchain
+chain = { workspace = true }
+alloy = { workspace = true }
+
 # Turnkey
 turnkey = { workspace = true }
 

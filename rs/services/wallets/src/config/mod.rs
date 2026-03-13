@@ -1,10 +1,13 @@
 use std::env;
 
+use alloy::primitives::Address;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
     pub turnkey: turnkey::client::TurnkeyConfig,
+    pub chain: chain::ChainConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +62,17 @@ impl Config {
                 parent_org_id: env::var("TURNKEY_PARENT_ORG_ID")?,
                 api_public_key: env::var("TURNKEY_API_PUBLIC_KEY")?,
                 api_private_key: env::var("TURNKEY_API_PRIVATE_KEY")?,
+            },
+            chain: chain::ChainConfig {
+                rpc_url: env::var("EVM_RPC_URL")
+                    .unwrap_or_else(|_| "http://localhost:8545".to_string()),
+                platform_contract_address: env::var("EVM_PLATFORM_CONTRACT_ADDRESS")?
+                    .parse::<Address>()
+                    .map_err(|e| anyhow::anyhow!("Invalid EVM_PLATFORM_CONTRACT_ADDRESS: {e}"))?,
+                chain_id: env::var("EVM_CHAIN_ID")
+                    .unwrap_or_else(|_| "31337".to_string())
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("Invalid EVM_CHAIN_ID: {e}"))?,
             },
         };
 

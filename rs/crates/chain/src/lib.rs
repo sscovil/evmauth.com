@@ -1,7 +1,9 @@
+pub mod beacon;
 pub mod client;
 pub mod evmauth;
 
 pub use alloy::primitives::{Address, Bytes, U256};
+pub use beacon::encode_beacon_proxy_deploy;
 pub use client::{ChainClient, ChainConfig};
 
 use thiserror::Error;
