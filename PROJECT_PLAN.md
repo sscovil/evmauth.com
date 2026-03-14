@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-11 (rev 8)
+> **Last updated:** 2026-03-14 (rev 9)
 
 ---
 
@@ -34,8 +34,8 @@ EVMAuth is an authorization state management system built on the ERC-6909 multi-
 | Actor | Description |
 |---|---|
 | **Platform operator** | EVMAuth (you). Owns the Turnkey parent org, the beacon implementation contract, and the platform operator wallet used as a co-signer on deployer contracts. |
-| **Deployer** | A user or organization that registers an app and deploys an EVMAuth proxy contract. Owns their contract via their org's Turnkey sub-org wallet. |
-| **End user** | A customer of a deployer's app. Authenticates via the platform's hosted auth flow. Gets a personal Turnkey sub-org with one HD wallet account per app they use. |
+| **Deployer** | A user or organization that registers an app and deploys an EVMAuth proxy contract. Administers their contract's EVMAuth roles via their org's Turnkey sub-org HD wallet (per-app derived accounts). The platform operator wallet deploys and owns the proxy at the EVM level. |
+| **End user** | A customer of a deployer's app. Authenticates via the platform's hosted auth flow. Gets a personal Turnkey sub-org with an HD wallet; per-app accounts are derived from it. |
 | **Delegate / Agent** | An address granted `operator` rights by an end user via ERC-6909 `setOperator`. Can call the authorization API on the principal's behalf. |
 
 ### Core Platform Responsibilities
@@ -122,8 +122,8 @@ evmauth.com/
 │   │   │       │   └── handlers/
 │   │   │       │       ├── mod.rs
 │   │   │       │       ├── health.rs
-│   │   │       │       ├── org_wallets.rs
-│   │   │       │       ├── person_wallets.rs
+│   │   │       │       ├── entity_wallets.rs
+│   │   │       │       ├── entity_app_wallets.rs
 │   │   │       │       └── internal/
 │   │   │       ├── domain/
 │   │   │       ├── dto/
@@ -367,7 +367,7 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 | Domain Concept | Owning Service | Schema |
 |---|---|---|
 | Person, Org, OrgMember, AuthCode | auth | `auth` |
-| OrgWallet, PersonAppWallet, DelegatedAccount | wallets | `wallets` |
+| EntityWallet, EntityAppWallet, DelegatedAccount | wallets | `wallets` |
 | AppRegistration, Contract, OperatorGrant | registry | `registry` |
 | ApiRequestLog, ContractEvent | analytics | `analytics` |
 | File, Doc, Image, Media | assets | `assets` |
@@ -394,15 +394,15 @@ Members have roles: `owner`, `admin`, `member`.
 
 Junction table with `org_id`, `member_id`, `role`. Database triggers sync the owner role with `auth.orgs.owner_id` and validate membership constraints.
 
-### OrgWallet (wallets service -- to build)
+### EntityWallet (wallets service -- to build)
 
-An org's Turnkey sub-org, wallet, and delegated account. One per org. Contains the Turnkey sub-org ID, wallet address, and delegated account user ID. The delegated account holds a server-side API key (P256 keypair) scoped by Turnkey policy to ERC-712 message signing only.
+A Turnkey sub-org and HD wallet for any entity (person or org). One per entity. Contains the Turnkey sub-org ID, HD wallet ID, first-derived wallet address (index 0, used as platform identity), and optional delegated account user ID. For orgs, the delegated account holds a P256 API key scoped by Turnkey policy to `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` only. Replaces both `person_turnkey_refs` and `org_wallets`.
 
-### PersonAppWallet (wallets service -- to build)
+### EntityAppWallet (wallets service -- to build)
 
-An end user's HD wallet account for a specific app. One per (person, app_registration) pair. Created when an end user first authenticates with a deployer's app. Contains the wallet address and Turnkey account ID.
+An HD wallet account derived for a specific (entity, app_registration) pair. For orgs, this derived address becomes the EVMAuth default admin for the app's proxy contract. For people, this is the end user's identity within that app. Created when an app registration is created (for orgs) or when an end user first authenticates (for people). Replaces `person_app_wallets` and adds org app wallet support.
 
-### AppRegistration (registry service -- to build)
+### AppRegistration (registry service -- partial)
 
 An OAuth-like client registration under an org. Represents one application that will use EVMAuth for authorization. Contains the client ID, allowed callback URLs, a reference to the EVMAuth contract, and the set of token IDs relevant to this app.
 
@@ -410,9 +410,11 @@ There are no client secrets. Access to the authorization query API is controlled
 
 One org can have many app registrations, each pointing to a different EVMAuth proxy contract.
 
-### Contract (registry service -- to build)
+When an app registration is created, the wallets service derives an org app-admin wallet account for that app from the org's HD wallet. This derived address becomes the EVMAuth default admin for the app's deployed proxy contract.
 
-An EVMAuth beacon proxy deployed on Radius. Belongs to an org. Contains the on-chain contract address, deployment transaction hash, and the beacon implementation address at time of deployment.
+### Contract (registry service -- partial)
+
+An EVMAuth beacon proxy deployed on Radius. Belongs to an org. The proxy is deployed by the platform operator wallet (which pays gas and owns the proxy at the EVM level for upgradeability), but the EVMAuth default admin role is set to the org's app-specific derived address (from EntityAppWallet). The platform can upgrade the beacon implementation (affecting all proxies), but only the org controls EVMAuth role administration on their contract. Contains the on-chain contract address, deployment transaction hash, and the beacon implementation address at time of deployment.
 
 ### PlatformContract
 
@@ -424,7 +426,7 @@ The platform's own EVMAuth proxy contract, deployed on Radius and owned by the p
 | 2 | Contract deployment |
 | 3 | Org admin actions |
 
-When a deployer registers an org, the platform mints token ID 1 (and others as appropriate) to the org's Turnkey wallet address. Revoking access is a burn -- no secrets to rotate, no database records to invalidate.
+When a deployer registers an org, the platform mints capability tokens to the org's first HD wallet account (index 0, derived at org creation time). This address serves as the org's platform identity. Revoking access is a burn -- no secrets to rotate, no database records to invalidate.
 
 ### File / Doc / Image / Media (assets service -- existing as `assets.*`)
 
@@ -436,7 +438,7 @@ The assets service manages uploaded files with S3/MinIO backend. The `assets.fil
 
 The database uses schema-per-service isolation. Each microservice owns its schema and is the only service that reads from or writes to it. All tables use UUID primary keys via `gen_random_uuid()`. All timestamps are `timestamptz`. The `moddatetime` trigger handles automatic `updated_at` updates.
 
-All migrations live in `rs/services/db/migrations/` and are run by the `db` service. Migration file names are prefixed with the owning schema (e.g., `20260310000001_wallets_org_wallets.sql`).
+All migrations live in `rs/services/db/migrations/` and are run by the `db` service. Migration file names are prefixed with the owning schema (e.g., `20260310000001_wallets_entity_wallets.sql`).
 
 ### `auth` Schema (auth service -- existing)
 
@@ -459,7 +461,7 @@ CREATE TABLE auth.auth_codes (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code_hash               TEXT NOT NULL UNIQUE,
     app_registration_id     UUID NOT NULL,          -- references registry.app_registrations (no FK)
-    person_app_wallet_id    UUID NOT NULL,           -- references wallets.person_app_wallets (no FK)
+    entity_app_wallet_id    UUID NOT NULL,           -- references wallets.entity_app_wallets (no FK)
     code_challenge          TEXT NOT NULL,
     redirect_uri            TEXT NOT NULL,
     state                   TEXT NOT NULL,
@@ -477,63 +479,52 @@ CREATE INDEX idx_auth_codes_expires_at ON auth.auth_codes(expires_at);
 -- Migration: wallets_create_schema
 CREATE SCHEMA IF NOT EXISTS wallets;
 
--- Migration: wallets_org_wallets
+-- Migration: wallets_entity_wallets
 
--- Org wallet: Turnkey sub-org, wallet address, and delegated account for an org.
--- One per org. The delegated account holds a server-side API key scoped by
--- Turnkey policy to ERC-712 signing only.
-CREATE TABLE wallets.org_wallets (
+-- Entity wallet: Turnkey sub-org and HD wallet for any entity (person or org).
+-- One per entity. Account index 0 is the entity's platform identity address.
+-- For orgs, the delegated account holds a P256 API key scoped by Turnkey policy
+-- to ACTIVITY_TYPE_SIGN_RAW_PAYLOAD only.
+CREATE TABLE wallets.entity_wallets (
     id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id                      UUID NOT NULL UNIQUE,   -- references auth.orgs (no FK)
+    entity_id                   UUID NOT NULL UNIQUE,   -- references auth.entities (no FK)
     turnkey_sub_org_id          TEXT NOT NULL UNIQUE,
-    wallet_address              TEXT NOT NULL,           -- EIP-55 checksummed
-    turnkey_delegated_user_id   TEXT NOT NULL,
+    turnkey_wallet_id           TEXT NOT NULL,           -- Turnkey HD wallet ID
+    wallet_address              TEXT NOT NULL,           -- first derived account (index 0), platform identity
+    turnkey_delegated_user_id   TEXT,                    -- nullable: orgs have this, people typically don't
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_org_wallets_pagination ON wallets.org_wallets(created_at, id);
+CREATE INDEX idx_entity_wallets_pagination ON wallets.entity_wallets(created_at, id);
 
-CREATE TRIGGER but_org_wallets_moddatetime
-    BEFORE UPDATE ON wallets.org_wallets
+CREATE TRIGGER but_entity_wallets_moddatetime
+    BEFORE UPDATE ON wallets.entity_wallets
     FOR EACH ROW
 EXECUTE FUNCTION moddatetime(updated_at);
 
--- Migration: wallets_person_wallets
+-- Migration: wallets_entity_app_wallets
 
--- Person's Turnkey sub-org reference. One per person.
-CREATE TABLE wallets.person_turnkey_refs (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    person_id           UUID NOT NULL UNIQUE,       -- references auth.people (no FK)
-    turnkey_sub_org_id  TEXT NOT NULL UNIQUE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_person_turnkey_refs_pagination ON wallets.person_turnkey_refs(created_at, id);
-
-CREATE TRIGGER but_person_turnkey_refs_moddatetime
-    BEFORE UPDATE ON wallets.person_turnkey_refs
-    FOR EACH ROW
-EXECUTE FUNCTION moddatetime(updated_at);
-
--- End-user wallet accounts: one per (person, app_registration) pair.
--- Created when an end user first authenticates with a deployer's app.
-CREATE TABLE wallets.person_app_wallets (
+-- Per-app derived HD wallet accounts for both people and orgs.
+-- For orgs, the derived address becomes the EVMAuth default admin for the
+-- app's proxy contract. For people, the derived address is the end user's
+-- identity within that app.
+CREATE TABLE wallets.entity_app_wallets (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    person_id               UUID NOT NULL,              -- references auth.people (no FK)
+    entity_id               UUID NOT NULL,              -- references auth.entities (no FK)
     app_registration_id     UUID NOT NULL,              -- references registry.app_registrations (no FK)
     wallet_address          TEXT NOT NULL,               -- EIP-55 checksummed
     turnkey_account_id      TEXT NOT NULL,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (person_id, app_registration_id),
+    UNIQUE (entity_id, app_registration_id),
     UNIQUE (wallet_address)
 );
-CREATE INDEX idx_person_app_wallets_person_id ON wallets.person_app_wallets(person_id);
-CREATE INDEX idx_person_app_wallets_address ON wallets.person_app_wallets(wallet_address);
-CREATE INDEX idx_person_app_wallets_pagination ON wallets.person_app_wallets(created_at, id);
+CREATE INDEX idx_entity_app_wallets_entity_id ON wallets.entity_app_wallets(entity_id);
+CREATE INDEX idx_entity_app_wallets_address ON wallets.entity_app_wallets(wallet_address);
+CREATE INDEX idx_entity_app_wallets_pagination ON wallets.entity_app_wallets(created_at, id);
 
-CREATE TRIGGER but_person_app_wallets_moddatetime
-    BEFORE UPDATE ON wallets.person_app_wallets
+CREATE TRIGGER but_entity_app_wallets_moddatetime
+    BEFORE UPDATE ON wallets.entity_app_wallets
     FOR EACH ROW
 EXECUTE FUNCTION moddatetime(updated_at);
 ```
@@ -673,7 +664,7 @@ CREATE INDEX idx_contract_events_pagination ON analytics.contract_events(created
 | Unique constraints | `uq_{table}_{columns}` | `uq_people_email_provider` |
 | Triggers | `{timing}_{table}_{action}` | `but_people_moddatetime` |
 | Trigger functions | `{schema}.tfn_{table}_{action}` | `auth.tfn_people_create_personal_workspace` |
-| Migration files | `{timestamp}_{schema}_{description}.sql` | `20260310000001_wallets_org_wallets.sql` |
+| Migration files | `{timestamp}_{schema}_{description}.sql` | `20260310000001_wallets_entity_wallets.sql` |
 
 ---
 
@@ -722,11 +713,13 @@ Services call each other via internal HTTP APIs (feature-gated `/internal/*` rou
 
 | Caller | Callee | Purpose |
 |---|---|---|
-| auth | wallets (internal) | Create person Turnkey sub-org on signup |
-| auth | wallets (internal) | Create org wallet on org creation |
-| auth | wallets (internal) | Create person app wallet during PKCE flow |
+| auth | wallets (internal) | Create entity wallet (Turnkey sub-org + HD wallet) on person signup |
+| auth | wallets (internal) | Create entity wallet for org on org creation |
+| auth | wallets (internal) | Create entity app wallet for person during PKCE flow |
+| auth | wallets (internal) | Add user to org's Turnkey sub-org when invited to join org |
 | auth | registry (internal) | Validate `client_id` and `redirect_uri` during PKCE flow |
-| registry | wallets (internal) | Look up org wallet address for contract deployment |
+| registry | wallets (internal) | Create entity app wallet when app registration is created |
+| registry | wallets (internal) | Look up org's entity app wallet address for contract deployment |
 | registry | wallets (internal) | Sign transactions via delegated account |
 | registry | analytics (internal) | Log API request after accounts query |
 | analytics | registry (internal) | Look up contract metadata for event indexing |
@@ -799,12 +792,13 @@ Manages all Turnkey sub-org lifecycle, wallet creation, and signing operations. 
 │   └── GET    /{app_id}            # Get wallet details for specific app
 │
 └── internal/                       # Feature-gated
-    ├── POST   /person-sub-org      # Create Turnkey sub-org for person
-    ├── POST   /org-wallet          # Create org wallet + delegated account
-    ├── GET    /org-wallet/{org_id} # Look up org wallet by org ID
-    ├── POST   /person-app-wallet   # Create HD wallet account for (person, app)
-    ├── GET    /person-app-wallet/{id} # Look up person app wallet
-    └── POST   /sign                # Sign payload via delegated account
+    ├── POST   /entity-wallet           # Create Turnkey sub-org + HD wallet for entity
+    ├── GET    /entity-wallet/{entity_id} # Look up entity wallet
+    ├── POST   /entity-app-wallet       # Derive HD wallet account for (entity, app)
+    ├── GET    /entity-app-wallet/{entity_id}/{app_id} # Look up entity app wallet
+    ├── POST   /org-sub-org-user        # Add a user to an org's Turnkey sub-org
+    ├── POST   /sign                    # Sign payload via delegated account
+    └── POST   /send-tx                 # Sign + broadcast transaction via delegated account
 ```
 
 **AppState:**
@@ -814,6 +808,7 @@ pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
     pub turnkey: Arc<TurnkeyClient>,
+    pub evm: Arc<EvmClient>,
     pub config: Arc<Config>,
 }
 ```
@@ -858,6 +853,7 @@ pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
     pub evm: Arc<EvmClient>,
+    pub http_client: reqwest::Client,
     pub config: Arc<Config>,
 }
 ```
@@ -990,7 +986,7 @@ impl EvmClient {
 }
 ```
 
-Future additions: `deploy_beacon_proxy`, `balances_for` (batch query for multiple token IDs).
+Future additions: `deploy_beacon_proxy`, `balances_for` (batch query for multiple token IDs), `encode_initialize_admin(admin_address)` (encodes proxy initializer data with admin address).
 
 ### Accounts Endpoint (Authorization Query -- Registry Service)
 
@@ -1021,7 +1017,7 @@ Type: AccountsQuery
 1. Validate `X-Signature` is a valid ERC-712 signature recovering to `X-Signer`
 2. Reject if `nonce` (timestamp) is older than 30 seconds
 3. Call `balanceOf(platform_contract, X-Signer, TOKEN_ID_API_ACCESS)` on Radius -- reject with `403` if zero
-4. Verify `X-Client-Id` resolves to an app registration whose org wallet matches `X-Signer` (or has `X-Signer` as an approved operator via `isOperator`)
+4. Verify `X-Client-Id` resolves to an app registration whose org's entity app wallet address (from `wallets.entity_app_wallets`) matches `X-Signer` (or has `X-Signer` as an approved operator via `isOperator`)
 5. If `delegate` query param is present: call `is_operator(contract, address, delegate)` -- reject with `403` if false
 6. Query `balance_of` for each token ID in `relevant_token_ids` for the principal address
 7. Call analytics internal API to log the request
@@ -1154,21 +1150,36 @@ To add a new Next.js app (e.g., an internal admin tool):
 
 ```
 EVMAuth Platform (Turnkey parent org)
-|-- [Person sub-org] -- one per person (managed by wallets service)
-|   +-- Authenticators: passkey (primary) + OAuth provider (optional backup)
+|-- Platform HD Wallet
+|   +-- Platform operator account (fixed derivation path)
+|       Deploys proxies, pays gas, owns proxies at EVM level
 |
-|-- [Org sub-org] -- one per organization (managed by wallets service)
-|   |-- Root user: the human org owner (passkey/OAuth)
-|   |   +-- Wallet: org wallet (owns contracts, holds platform capability tokens)
-|   +-- Delegated Account user: platform-controlled, no root privileges
-|       +-- API key (P256): scoped by Turnkey policy to ERC-712 signing only
+|-- [Person sub-org] -- one per person
+|   +-- Root user: passkey (primary) + OAuth (optional backup)
+|   +-- HD Wallet (one per person)
+|       |-- Account index 0: person's platform identity
+|       |-- Account for App A (derived per app_registration_id)
+|       |-- Account for App B
+|       +-- ...
 |
-+-- [End user sub-org] -- one per end user (managed by wallets service)
-    |-- Authenticators: OAuth provider
-    |-- Wallet: App A (HD account derived per app_registration_id)
-    |-- Wallet: App B
-    +-- ...
++-- [Org sub-org] -- one per organization
+    |-- Root user: the org owner (passkey/OAuth credential)
+    |-- Delegated Account user: platform-controlled
+    |   +-- API key (P256): scoped to ACTIVITY_TYPE_SIGN_RAW_PAYLOAD only
+    +-- HD Wallet (one per org)
+        |-- Account index 0: org platform identity (holds capability tokens)
+        |-- Account for App A (EVMAuth default admin for App A's proxy)
+        |-- Account for App B (EVMAuth default admin for App B's proxy)
+        +-- ...
 ```
+
+### Wallet Account Types
+
+| Account type | Lives in | Derives from | Purpose |
+|---|---|---|---|
+| Entity platform account | Entity sub-org HD wallet | Index 0 (fixed) | Platform identity, holds capability tokens (orgs) |
+| Entity app account | Entity sub-org HD wallet | Per app_registration_id | EVMAuth default admin (orgs) or end-user identity (people) |
+| Platform operator account | Platform parent org HD wallet | Fixed path | Deploys proxies, pays gas |
 
 ### Deployer Signup / Login Flow
 
@@ -1177,11 +1188,11 @@ EVMAuth Platform (Turnkey parent org)
 3. For a new user via passkey:
    a. Frontend uses `@turnkey/sdk-browser` to create a passkey credential
    b. `POST /auth/auth/signup` with attestation and email
-   c. Auth service calls wallets internal API to create person Turnkey sub-org
+   c. Auth service calls wallets internal API to create entity wallet (Turnkey sub-org + HD wallet) for the person
    d. Auth service inserts `auth.people` row (trigger auto-creates personal workspace org)
-   e. Auth service calls wallets internal API to create org wallet + delegated account for the personal workspace
-   f. Wallets service creates Turnkey sub-org, adds delegated account user with signing-only policy, stores in `wallets.org_wallets`
-   g. Platform mints capability token(s) to the org wallet on the platform EVMAuth contract (via registry/chain)
+   e. Auth service calls wallets internal API to create entity wallet + delegated account for the personal workspace org
+   f. Wallets service creates Turnkey sub-org, adds delegated account user with signing-only policy, stores in `wallets.entity_wallets`
+   g. Platform mints capability token(s) to the org's platform identity address (entity wallet index 0) on the platform EVMAuth contract
 4. Auth service issues a platform session JWT, sets it as an HTTP-only, Secure, SameSite=Strict cookie
 5. Redirect to `/dashboard`
 
@@ -1244,6 +1255,12 @@ The `/auth/wallet` page (served by frontend, data from wallets service via gatew
 - Add a passkey as a backup authenticator
 - View wallet address per app
 
+### Org Membership & Turnkey Sub-Org Access
+
+When a person is invited to join an org, they need access to the org's Turnkey sub-org to participate in signing workflows. The auth service calls wallets `POST /internal/org-sub-org-user` to add the invited person as a user in the org's Turnkey sub-org. This is separate from the `auth.orgs_people` membership record -- it's a Turnkey-level access grant that enables the person to participate in org signing operations.
+
+The org's delegated account (platform-controlled) is used for automated signing (e.g., `setOperator` calls). Individual org members interact through their own credentials added to the org's Turnkey sub-org.
+
 ---
 
 ## 9. Contract Deployment & Management
@@ -1254,19 +1271,29 @@ The platform maintains one **beacon contract** on Radius that points to the curr
 
 ### Deployment Flow
 
+Deployment happens in two phases:
+
+**Phase 1 -- App registration creation:**
+
 1. Deployer creates an app registration in the dashboard (`POST /registry/orgs/{org_id}/apps`)
-2. Deployer navigates to "Deploy Contract" (`POST /registry/orgs/{org_id}/contracts`)
-3. Registry service:
-   a. Calls wallets internal API to look up org wallet address
-   b. Calls `evm::deploy_beacon_proxy(org_wallet_address, beacon_address)` using the platform operator wallet
-   c. Inserts `registry.contracts` row
-4. Dashboard displays the new contract with a block explorer link
+2. Registry service calls wallets `POST /internal/entity-app-wallet` with `{ entity_id: org_id, app_registration_id }`
+3. Wallets service derives a new account from the org's HD wallet, stores in `wallets.entity_app_wallets`
+4. The derived address will become the EVMAuth default admin for this app's proxy contract
+
+**Phase 2 -- Contract deployment:**
+
+1. Deployer navigates to "Deploy Contract" (`POST /registry/orgs/{org_id}/contracts`)
+2. Registry service looks up org's app wallet via `GET /internal/entity-app-wallet/{org_id}/{app_id}`
+3. Registry encodes BeaconProxy deployment with init_data setting EVMAuth default admin to the org's app-specific derived address
+4. Registry calls wallets `POST /internal/send-tx` to deploy (platform operator wallet pays gas and owns the proxy at the EVM level)
+5. Registry inserts `registry.contracts` row
+6. Dashboard displays the new contract with a block explorer link
 
 ### Operator Grant Flow
 
 1. Deployer clicks "Grant API access" in dashboard
 2. Frontend calls `POST /registry/orgs/{org_id}/contracts/{id}/grant-operator`
-3. Registry service calls wallets internal API to sign the `setOperator` transaction via delegated account
+3. Registry service calls wallets internal API to sign the `setOperator` transaction via the org's delegated account (the `setOperator` call is made from the org's app-specific derived address, which holds the EVMAuth default admin role)
 4. Registry service broadcasts the signed tx to Radius, records in `registry.operator_grants`
 
 ### Operator Revocation
@@ -1484,6 +1511,16 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Relevant token ID configuration per app registration
 - [x] Wallets service: `POST /internal/send-tx` endpoint (sign + broadcast via Turnkey + Alloy)
 - [x] Registry internal API: `GET /internal/apps/by-client-id/{client_id}`, `GET /internal/contracts/{id}`
+- [ ] Rewrite wallets schema: `entity_wallets` table (replaces `org_wallets` + `person_turnkey_refs`)
+- [ ] Rewrite wallets schema: `entity_app_wallets` table (replaces `person_app_wallets`, adds org support)
+- [ ] EntityWallet domain, DTOs, repository in wallets service
+- [ ] EntityAppWallet domain, DTOs, repository in wallets service
+- [ ] Wallets service: `POST /internal/entity-wallet` endpoint
+- [ ] Wallets service: `POST /internal/entity-app-wallet` endpoint
+- [ ] Update auth signup flow to use `entity-wallet` endpoint
+- [ ] Update app registration creation to trigger entity app wallet derivation
+- [ ] Update contract deployment to use org's entity app wallet as EVMAuth default admin
+- [ ] EVM crate: helper for encoding proxy initializer data with admin address
 - [ ] Dashboard: App registration pages, contract deployment wizard, operator grant UI
 
 ### Phase 3 -- End User Auth
@@ -1515,7 +1552,8 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] API request logging (internal endpoint called by registry)
 - [ ] Contract event indexing (background task polling chain)
 - [ ] Dashboard: Analytics pages (usage, events)
-- [ ] Org member invite flow (email invitation)
+- [ ] Org member invite flow (email invitation, includes Turnkey sub-org user creation)
+- [ ] Wallets service: `POST /internal/org-sub-org-user` endpoint (add user to org's Turnkey sub-org)
 - [ ] `RequireOrgRole` middleware enforcement on org-scoped routes (auth + registry)
 - [ ] Org settings page
 - [ ] Turnkey org sub-org policy configuration
@@ -1642,3 +1680,6 @@ SESSION_SECRET=...
 - Use PNPM workspace protocol (`"workspace:*"`) for all internal package references in `ts/`. Never publish shared packages to npm -- they are workspace-only.
 - The `ts/packages/ui` package owns the Mantine theme. All services import the theme from `@evmauth/ui` -- never duplicate theme configuration.
 - Use the existing `check.sh` script for quality checks. It runs TypeScript checks (`biome check` + `pnpm -r run typecheck`) at the `ts/` workspace root, then Rust checks (`cargo fmt --check`, `cargo clippy --workspace`, `cargo test --workspace`) at the `rs/` workspace root.
+- Each entity (person or org) has one HD wallet in its Turnkey sub-org via `entity_wallets`. Account index 0 is the entity's platform identity. Additional accounts are derived per app and stored in `entity_app_wallets`.
+- Contract deployment must use the org's app-specific derived address as EVMAuth default admin, not the org's platform identity address (index 0).
+- When creating an app registration, the registry service must call wallets to derive the entity app wallet before returning success.
