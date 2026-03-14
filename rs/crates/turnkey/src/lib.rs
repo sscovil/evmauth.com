@@ -8,21 +8,21 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TurnkeyError {
-    #[error("HTTP request failed: {0}")]
+    #[error("http request failed: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("API error: {status} - {message}")]
+    #[error("api error: {status} - {message}")]
     Api { status: u16, message: String },
 
-    #[error("Serialization error: {0}")]
+    #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    #[error("Configuration error: {0}")]
+    #[error("configuration error: {0}")]
     Config(String),
 
-    #[error("Signing error: {0}")]
+    #[error("signing error: {0}")]
     Signing(String),
 
-    #[error("Max retries exceeded after {attempts} attempts: {last_error}")]
+    #[error("max retries exceeded after {attempts} attempts: {last_error}")]
     MaxRetriesExceeded { attempts: u32, last_error: String },
 }

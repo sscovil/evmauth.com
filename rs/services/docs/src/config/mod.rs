@@ -70,6 +70,6 @@ impl Config {
             .domain_suffix(domain_suffix)
             .service_port(8000);
 
-        service_discovery::discover_services(&options)
+        Ok(service_discovery::discover_services(&options)?)
     }
 }

@@ -18,7 +18,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let aggregator = Aggregator::new();
 
     // Create application state
-    let state = Arc::new(routes::AppState { config, aggregator });
+    let state = Arc::new(routes::AppState {
+        config,
+        aggregator,
+        http_client: reqwest::Client::new(),
+    });
 
     // Create the router
     let router = routes::create_router(state.clone());

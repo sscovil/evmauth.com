@@ -12,15 +12,32 @@ use crate::sub_org::{
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF_MS: u64 = 100;
 
+const ACTIVITY_TYPE_CREATE_SUB_ORG: &str = "ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V7";
+const ACTIVITY_TYPE_CREATE_API_ONLY_USERS: &str = "ACTIVITY_TYPE_CREATE_API_ONLY_USERS";
+const ACTIVITY_TYPE_CREATE_WALLET: &str = "ACTIVITY_TYPE_CREATE_WALLET";
+const ACTIVITY_TYPE_CREATE_WALLET_ACCOUNTS: &str = "ACTIVITY_TYPE_CREATE_WALLET_ACCOUNTS";
+const ACTIVITY_TYPE_SIGN_RAW_PAYLOAD: &str = "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2";
+
 /// Configuration for the Turnkey client.
 /// Services are responsible for populating this from their own config source
 /// (environment variables, config files, etc.).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TurnkeyConfig {
     pub api_base_url: String,
     pub parent_org_id: String,
     pub api_public_key: String,
     pub api_private_key: String,
+}
+
+impl std::fmt::Debug for TurnkeyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TurnkeyConfig")
+            .field("api_base_url", &self.api_base_url)
+            .field("parent_org_id", &self.parent_org_id)
+            .field("api_public_key", &"[redacted]")
+            .field("api_private_key", &"[redacted]")
+            .finish()
+    }
 }
 
 /// Turnkey API client with retry logic
@@ -45,7 +62,7 @@ impl TurnkeyClient {
         params: CreateSubOrg,
     ) -> Result<SubOrgResponse, TurnkeyError> {
         let body = serde_json::json!({
-            "type": "ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V7",
+            "type": ACTIVITY_TYPE_CREATE_SUB_ORG,
             "timestampMs": chrono::Utc::now().timestamp_millis().to_string(),
             "organizationId": self.config.parent_org_id,
             "parameters": {
@@ -70,7 +87,7 @@ impl TurnkeyClient {
         params: CreateDelegatedAccount,
     ) -> Result<DelegatedAccountResponse, TurnkeyError> {
         let body = serde_json::json!({
-            "type": "ACTIVITY_TYPE_CREATE_API_ONLY_USERS",
+            "type": ACTIVITY_TYPE_CREATE_API_ONLY_USERS,
             "timestampMs": chrono::Utc::now().timestamp_millis().to_string(),
             "organizationId": params.sub_org_id,
             "parameters": {
@@ -93,7 +110,7 @@ impl TurnkeyClient {
             .and_then(|v| v.as_array())
             .ok_or_else(|| TurnkeyError::Api {
                 status: 0,
-                message: "Missing apiOnlyUserIds in response".to_string(),
+                message: "missing apiOnlyUserIds in response".to_string(),
             })?;
 
         let user_id = users
@@ -101,7 +118,7 @@ impl TurnkeyClient {
             .and_then(|v| v.as_str())
             .ok_or_else(|| TurnkeyError::Api {
                 status: 0,
-                message: "Empty apiOnlyUserIds in response".to_string(),
+                message: "empty apiOnlyUserIds in response".to_string(),
             })?
             .to_string();
 
@@ -117,7 +134,7 @@ impl TurnkeyClient {
         params: CreateWallet,
     ) -> Result<WalletResponse, TurnkeyError> {
         let body = serde_json::json!({
-            "type": "ACTIVITY_TYPE_CREATE_WALLET",
+            "type": ACTIVITY_TYPE_CREATE_WALLET,
             "timestampMs": chrono::Utc::now().timestamp_millis().to_string(),
             "organizationId": params.sub_org_id,
             "parameters": {
@@ -148,7 +165,7 @@ impl TurnkeyClient {
         params: CreateWalletAccount,
     ) -> Result<WalletAccountResponse, TurnkeyError> {
         let body = serde_json::json!({
-            "type": "ACTIVITY_TYPE_CREATE_WALLET_ACCOUNTS",
+            "type": ACTIVITY_TYPE_CREATE_WALLET_ACCOUNTS,
             "timestampMs": chrono::Utc::now().timestamp_millis().to_string(),
             "organizationId": params.sub_org_id,
             "parameters": {
@@ -173,12 +190,12 @@ impl TurnkeyClient {
             .and_then(|v| v.as_array())
             .ok_or_else(|| TurnkeyError::Api {
                 status: 0,
-                message: "Missing addresses in response".to_string(),
+                message: "missing addresses in response".to_string(),
             })?;
 
         let first = addresses.first().ok_or_else(|| TurnkeyError::Api {
             status: 0,
-            message: "Empty addresses in response".to_string(),
+            message: "empty addresses in response".to_string(),
         })?;
 
         let address = first
@@ -186,14 +203,17 @@ impl TurnkeyClient {
             .and_then(|v| v.as_str())
             .ok_or_else(|| TurnkeyError::Api {
                 status: 0,
-                message: "Missing address field".to_string(),
+                message: "missing address field".to_string(),
             })?
             .to_string();
 
         let account_id = first
             .get("accountId")
             .and_then(|v| v.as_str())
-            .unwrap_or_default()
+            .ok_or_else(|| TurnkeyError::Api {
+                status: 0,
+                message: "missing accountId field".to_string(),
+            })?
             .to_string();
 
         Ok(WalletAccountResponse {
@@ -208,7 +228,7 @@ impl TurnkeyClient {
         params: SignRawPayloadParams,
     ) -> Result<SignatureResponse, TurnkeyError> {
         let body = serde_json::json!({
-            "type": "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2",
+            "type": ACTIVITY_TYPE_SIGN_RAW_PAYLOAD,
             "timestampMs": chrono::Utc::now().timestamp_millis().to_string(),
             "organizationId": params.sub_org_id,
             "parameters": {
@@ -241,6 +261,16 @@ impl TurnkeyClient {
             match self.post_request(&url, body).await {
                 Ok(response) => return Ok(response),
                 Err(e) => {
+                    // Non-retryable errors should fail immediately
+                    if matches!(
+                        &e,
+                        TurnkeyError::Config(_)
+                            | TurnkeyError::Signing(_)
+                            | TurnkeyError::Serialization(_)
+                    ) {
+                        return Err(e);
+                    }
+
                     last_error = e.to_string();
 
                     if attempt < MAX_RETRIES {
@@ -293,7 +323,7 @@ impl TurnkeyClient {
             let message = response_body
                 .get("message")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error")
+                .unwrap_or("unknown error")
                 .to_string();
 
             return Err(TurnkeyError::Api {
@@ -313,6 +343,7 @@ impl TurnkeyClient {
         // base64url-encoded. The actual P-256 signing implementation requires
         // the p256 crate which will be added when integrating with real Turnkey API.
         // For now, construct the stamp structure.
+        warn!("using placeholder stamp signature - P-256 signing not yet implemented");
         let stamp = serde_json::json!({
             "publicKey": self.config.api_public_key,
             "scheme": "SIGNATURE_SCHEME_TK_API_P256",
@@ -320,7 +351,7 @@ impl TurnkeyClient {
         });
 
         let stamp_str = serde_json::to_string(&stamp)
-            .map_err(|e| TurnkeyError::Signing(format!("Failed to serialize stamp: {e}")))?;
+            .map_err(|e| TurnkeyError::Signing(format!("failed to serialize stamp: {e}")))?;
 
         Ok(base64::Engine::encode(
             &base64::engine::general_purpose::URL_SAFE_NO_PAD,
@@ -341,6 +372,6 @@ fn extract_activity_result(
         .cloned()
         .ok_or_else(|| TurnkeyError::Api {
             status: 0,
-            message: format!("Missing {result_key} in activity result"),
+            message: format!("missing {result_key} in activity result"),
         })
 }

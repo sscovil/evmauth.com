@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -8,6 +10,8 @@ use pagination::{Page, PaginatedResponse};
 use serde::Deserialize;
 use uuid::Uuid;
 
+const WALLETS_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::request::CreateContract;
@@ -17,9 +21,11 @@ use crate::repository::contract::{
 };
 use crate::repository::operator_grant::{OperatorGrantRepository, OperatorGrantRepositoryImpl};
 
-/// Response from wallets internal org-wallet endpoint
+/// Response from wallets internal org-wallet endpoint.
+/// Used to verify an org has a provisioned wallet before deployment.
 #[derive(Debug, Deserialize)]
 struct OrgWalletResponse {
+    #[allow(dead_code)] // deserialized to validate response shape
     wallet_address: String,
 }
 
@@ -53,23 +59,28 @@ pub async fn deploy_contract(
     let wallets_url = &state.config.wallets_service_url;
 
     // Step 1: Look up org wallet address
-    let org_wallet: OrgWalletResponse = state
-        .http_client
-        .get(format!("{wallets_url}/internal/org-wallet/{org_id}"))
-        .send()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to reach wallets service: {e}")))?
-        .error_for_status()
-        .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                ApiError::BadRequest(format!("No wallet found for organization {org_id}"))
-            } else {
-                ApiError::Internal(format!("Wallets service error: {e}"))
-            }
-        })?
-        .json()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to parse wallets response: {e}")))?;
+    // Verify the org has a wallet before proceeding with deployment
+    let _org_wallet: OrgWalletResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .get(format!("{wallets_url}/internal/org-wallet/{org_id}"))
+            .send()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
+            .error_for_status()
+            .map_err(|e| {
+                if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                    ApiError::BadRequest(format!("no wallet found for organization {org_id}"))
+                } else {
+                    ApiError::Internal(format!("wallets service error: {e}"))
+                }
+            })?
+            .json()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to parse wallets response: {e}")))
+    })
+    .await
+    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
 
     // Step 2: Encode BeaconProxy deployment bytecode
     let beacon_address = state.evm.platform_contract_address();
@@ -77,25 +88,29 @@ pub async fn deploy_contract(
     let calldata_hex = format!("0x{}", alloy::hex::encode(&deploy_bytecode));
 
     // Step 3: Send deployment transaction via wallets service
-    let send_tx_response: SendTxResponse = state
-        .http_client
-        .post(format!("{wallets_url}/internal/send-tx"))
-        .json(&SendTxRequest {
-            org_id,
-            to: None,
-            calldata: calldata_hex,
-        })
-        .send()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to reach wallets service: {e}")))?
-        .error_for_status()
-        .map_err(|e| ApiError::Internal(format!("Transaction broadcast failed: {e}")))?
-        .json()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to parse send-tx response: {e}")))?;
+    let send_tx_response: SendTxResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .post(format!("{wallets_url}/internal/send-tx"))
+            .json(&SendTxRequest {
+                org_id,
+                to: None,
+                calldata: calldata_hex,
+            })
+            .send()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
+            .error_for_status()
+            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
+            .json()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
+    })
+    .await
+    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
 
     let contract_address = send_tx_response.contract_address.ok_or_else(|| {
-        ApiError::Internal("No contract address returned from deployment".to_string())
+        ApiError::Internal("no contract address returned from deployment".to_string())
     })?;
 
     // Step 4: Insert contract record
@@ -113,8 +128,6 @@ pub async fn deploy_contract(
             deploy_tx_hash: send_tx_response.tx_hash,
         })
         .await?;
-
-    let _ = org_wallet.wallet_address;
 
     Ok((StatusCode::CREATED, Json(ContractResponse::from(contract))))
 }
@@ -211,7 +224,7 @@ pub async fn grant_operator(
         && existing.active
     {
         return Err(ApiError::BadRequest(
-            "Contract already has an active operator grant".to_string(),
+            "contract already has an active operator grant".to_string(),
         ));
     }
 
@@ -222,22 +235,26 @@ pub async fn grant_operator(
 
     // Send transaction via wallets service
     let wallets_url = &state.config.wallets_service_url;
-    let send_tx_response: SendTxResponse = state
-        .http_client
-        .post(format!("{wallets_url}/internal/send-tx"))
-        .json(&SendTxRequest {
-            org_id,
-            to: Some(contract.address),
-            calldata: calldata_hex,
-        })
-        .send()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to reach wallets service: {e}")))?
-        .error_for_status()
-        .map_err(|e| ApiError::Internal(format!("Transaction broadcast failed: {e}")))?
-        .json()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to parse send-tx response: {e}")))?;
+    let send_tx_response: SendTxResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .post(format!("{wallets_url}/internal/send-tx"))
+            .json(&SendTxRequest {
+                org_id,
+                to: Some(contract.address),
+                calldata: calldata_hex,
+            })
+            .send()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
+            .error_for_status()
+            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
+            .json()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
+    })
+    .await
+    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
 
     // Record the grant
     let grant = grant_repo
@@ -283,11 +300,11 @@ pub async fn revoke_operator(
     let existing = grant_repo
         .get_by_contract_id(contract_id)
         .await?
-        .ok_or_else(|| ApiError::BadRequest("No active operator grant to revoke".to_string()))?;
+        .ok_or_else(|| ApiError::BadRequest("no active operator grant to revoke".to_string()))?;
 
     if !existing.active {
         return Err(ApiError::BadRequest(
-            "Operator grant is already revoked".to_string(),
+            "operator grant is already revoked".to_string(),
         ));
     }
 
@@ -298,22 +315,26 @@ pub async fn revoke_operator(
 
     // Send transaction via wallets service
     let wallets_url = &state.config.wallets_service_url;
-    let send_tx_response: SendTxResponse = state
-        .http_client
-        .post(format!("{wallets_url}/internal/send-tx"))
-        .json(&SendTxRequest {
-            org_id,
-            to: Some(contract.address),
-            calldata: calldata_hex,
-        })
-        .send()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to reach wallets service: {e}")))?
-        .error_for_status()
-        .map_err(|e| ApiError::Internal(format!("Transaction broadcast failed: {e}")))?
-        .json()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to parse send-tx response: {e}")))?;
+    let send_tx_response: SendTxResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .post(format!("{wallets_url}/internal/send-tx"))
+            .json(&SendTxRequest {
+                org_id,
+                to: Some(contract.address),
+                calldata: calldata_hex,
+            })
+            .send()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
+            .error_for_status()
+            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
+            .json()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
+    })
+    .await
+    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
 
     // Update the grant record
     let revoked = grant_repo

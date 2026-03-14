@@ -2379,6 +2379,7 @@ version = "0.0.0"
 dependencies = [
  "alloy",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 
@@ -4978,6 +4979,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tracing",
 ]

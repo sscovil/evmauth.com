@@ -30,11 +30,7 @@ pub struct UpdateOrg {
     pub description: Option<String>,
 
     /// The ID of the person who owns this organization (ownership of default orgs cannot be transferred)
-    #[schema(
-        example = "550e8400-e29b-41d4-a716-446655440000",
-        format = "uuid",
-        format = "uuid"
-    )]
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000", format = "uuid")]
     pub owner_id: Option<Uuid>,
 
     /// Whether the org is `private`, `public`, or a user's `personal` workspace (which is tied to a single user and cannot have additional members)

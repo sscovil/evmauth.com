@@ -1,9 +1,13 @@
+use std::time::Duration;
+
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol;
 use alloy::sol_types::SolCall;
 
 use crate::EvmError;
 use crate::client::EvmClient;
+
+const RPC_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Generate type-safe bindings for the subset of EVMAuth6909 we need
 sol! {
@@ -20,11 +24,11 @@ impl EvmClient {
     /// Query the balance of `account` for token `token_id` on the platform contract.
     pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256, EvmError> {
         let contract = IEVMAuth6909::new(self.platform_contract_address(), self.provider());
-        let balance = contract
-            .balanceOf(account, token_id)
-            .call()
-            .await
-            .map_err(|e| EvmError::Contract(format!("balanceOf call failed: {e}")))?;
+        let balance =
+            tokio::time::timeout(RPC_TIMEOUT, contract.balanceOf(account, token_id).call())
+                .await
+                .map_err(|_| EvmError::Timeout("balance_of call timed out".to_string()))?
+                .map_err(|e| EvmError::Contract(format!("balance_of call failed: {e}")))?;
 
         Ok(balance)
     }
@@ -32,11 +36,10 @@ impl EvmClient {
     /// Check whether `spender` is an operator for `owner` on the platform contract.
     pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool, EvmError> {
         let contract = IEVMAuth6909::new(self.platform_contract_address(), self.provider());
-        let is_op = contract
-            .isOperator(owner, spender)
-            .call()
+        let is_op = tokio::time::timeout(RPC_TIMEOUT, contract.isOperator(owner, spender).call())
             .await
-            .map_err(|e| EvmError::Contract(format!("isOperator call failed: {e}")))?;
+            .map_err(|_| EvmError::Timeout("is_operator call timed out".to_string()))?
+            .map_err(|e| EvmError::Contract(format!("is_operator call failed: {e}")))?;
 
         Ok(is_op)
     }

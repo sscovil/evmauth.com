@@ -9,10 +9,11 @@ use crate::domain::AppRegistration;
 use super::error::RepositoryError;
 
 /// Generate a random 22-character base64url client ID (128 bits of entropy)
-fn generate_client_id() -> String {
+fn generate_client_id() -> Result<String, RepositoryError> {
     let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("failed to generate random bytes");
-    URL_SAFE_NO_PAD.encode(bytes)
+    getrandom::fill(&mut bytes)
+        .map_err(|e| RepositoryError::Internal(format!("failed to generate random bytes: {e}")))?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 #[async_trait]
@@ -68,7 +69,7 @@ impl<'a> AppRegistrationRepository for AppRegistrationRepositoryImpl<'a> {
         callback_urls: &[String],
         relevant_token_ids: &[i64],
     ) -> Result<AppRegistration, RepositoryError> {
-        let client_id = generate_client_id();
+        let client_id = generate_client_id()?;
 
         let result = sqlx::query_as!(
             AppRegistration,

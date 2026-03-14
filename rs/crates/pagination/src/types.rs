@@ -27,13 +27,16 @@ pub struct Cursor {
 }
 
 impl Cursor {
+    /// Create a new cursor from an item's id and creation timestamp
     pub fn new(id: Uuid, created_at: DateTime<Utc>) -> Self {
         Self { id, created_at }
     }
 
     /// Encode cursor to base64 JSON string
     pub fn encode(&self) -> String {
-        let json = serde_json::to_string(self).expect("Failed to serialize cursor");
+        // Cursor contains only Uuid and DateTime<Utc>, both of which have
+        // infallible Serialize impls, so this cannot fail in practice.
+        let json = serde_json::to_string(self).expect("cursor serialization is infallible");
         STANDARD.encode(json.as_bytes())
     }
 
@@ -41,13 +44,13 @@ impl Cursor {
     pub fn decode(encoded: &str) -> Result<Self, PaginationError> {
         let bytes = STANDARD
             .decode(encoded.as_bytes())
-            .map_err(|e| PaginationError::InvalidCursor(format!("Base64 decode failed: {}", e)))?;
+            .map_err(|e| PaginationError::InvalidCursor(format!("base64 decode failed: {e}")))?;
 
         let json = String::from_utf8(bytes)
-            .map_err(|e| PaginationError::InvalidCursor(format!("UTF-8 decode failed: {}", e)))?;
+            .map_err(|e| PaginationError::InvalidCursor(format!("utf-8 decode failed: {e}")))?;
 
         serde_json::from_str(&json)
-            .map_err(|e| PaginationError::InvalidCursor(format!("JSON parse failed: {}", e)))
+            .map_err(|e| PaginationError::InvalidCursor(format!("json parse failed: {e}")))
     }
 }
 
@@ -68,6 +71,7 @@ pub struct Page {
 }
 
 impl Page {
+    /// Create a default page configuration
     pub fn new() -> Self {
         Self::default()
     }
@@ -77,21 +81,21 @@ impl Page {
         // Relay spec discourages using both first and last
         if self.first.is_some() && self.last.is_some() {
             return Err(PaginationError::InvalidParameters(
-                "Cannot specify both first and last".to_string(),
+                "cannot specify both first and last".to_string(),
             ));
         }
 
         // Cannot use after with last/before (after is for forward pagination)
         if self.after.is_some() && (self.last.is_some() || self.before.is_some()) {
             return Err(PaginationError::InvalidParameters(
-                "Cannot use after with last or before".to_string(),
+                "cannot use after with last or before".to_string(),
             ));
         }
 
         // Cannot use before with first/after (before is for backward pagination)
         if self.before.is_some() && self.first.is_some() {
             return Err(PaginationError::InvalidParameters(
-                "Cannot use before with first".to_string(),
+                "cannot use before with first".to_string(),
             ));
         }
 
@@ -130,7 +134,9 @@ impl Page {
 /// Types implementing this trait can provide cursor information (id and created_at)
 /// needed for cursor-based pagination.
 pub trait Pageable {
+    /// The unique identifier for cursor positioning
     fn cursor_id(&self) -> Uuid;
+    /// The creation timestamp for cursor positioning
     fn cursor_created_at(&self) -> DateTime<Utc>;
 }
 
@@ -149,6 +155,7 @@ pub struct PaginatedResponse<T> {
 }
 
 impl<T> PaginatedResponse<T> {
+    /// Create a paginated response with explicit cursor metadata
     pub fn new(
         data: Vec<T>,
         start_cursor: Option<String>,

@@ -9,6 +9,8 @@ use std::sync::Arc;
 use super::error::ProxyError;
 use crate::config::Config;
 
+const SKIP_HEADERS: &[&str] = &["host", "connection", "transfer-encoding"];
+
 pub struct AppState {
     pub config: Config,
     pub client: reqwest::Client,
@@ -77,11 +79,9 @@ fn copy_headers(headers: &HeaderMap) -> HeaderMap {
     let mut new_headers = HeaderMap::new();
 
     // Copy all headers except those that should be set by reqwest
-    let skip_headers = ["host", "connection", "transfer-encoding"];
-
     for (key, value) in headers.iter() {
         let key_str = key.as_str().to_lowercase();
-        if !skip_headers.contains(&key_str.as_str()) {
+        if !SKIP_HEADERS.contains(&key_str.as_str()) {
             new_headers.insert(key.clone(), value.clone());
         }
     }
@@ -96,7 +96,7 @@ async fn forward_request(
     headers: HeaderMap,
     body: Body,
 ) -> Result<Response, ProxyError> {
-    // Convert axum body to bytes
+    // No body size limit: gateway proxies requests transparently to backend services
     let body_bytes = axum::body::to_bytes(body, usize::MAX)
         .await
         .map_err(|e| ProxyError::BadGateway(format!("Failed to read request body: {}", e)))?;

@@ -10,12 +10,15 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EvmError {
-    #[error("Configuration error: {0}")]
+    #[error("configuration error: {0}")]
     Config(String),
 
-    #[error("Transport error: {0}")]
+    #[error("transport error: {0}")]
     Transport(String),
 
-    #[error("Contract error: {0}")]
+    #[error("contract error: {0}")]
     Contract(String),
+
+    #[error("rpc timeout: {0}")]
+    Timeout(String),
 }

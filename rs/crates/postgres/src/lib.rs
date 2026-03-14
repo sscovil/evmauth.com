@@ -2,16 +2,37 @@ use serde::Deserialize;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Deserialize)]
+/// PostgreSQL connection configuration
+#[derive(Clone, Deserialize)]
 pub struct PGConfig {
+    /// Database server hostname
     pub host: String,
+    /// Database server port
     pub port: u16,
+    /// Authentication username
     pub user: String,
+    /// Authentication password
     pub password: String,
+    /// Database name
     pub database: String,
 }
 
+impl std::fmt::Debug for PGConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PGConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("user", &self.user)
+            .field("password", &"[redacted]")
+            .field("database", &self.database)
+            .finish()
+    }
+}
+
 impl PGConfig {
+    /// Build a PostgreSQL connection string from this configuration.
+    ///
+    /// WARNING: The returned string contains credentials and must not be logged.
     pub fn connection_string(&self) -> String {
         format!(
             "postgres://{}:{}@{}:{}/{}",

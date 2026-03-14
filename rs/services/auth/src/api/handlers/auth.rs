@@ -16,6 +16,12 @@ use crate::repository::pagination::Page;
 use crate::repository::person::{PersonRepository, PersonRepositoryImpl};
 use crate::{AppState, jwt};
 
+/// Session token validity period in hours
+const SESSION_DURATION_HOURS: i64 = 8;
+
+/// Token ID for the API access capability token (ERC-6909)
+const API_ACCESS_TOKEN_ID: u64 = 1;
+
 /// Passkey attestation data from the frontend (via @turnkey/sdk-browser)
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, utoipa::ToSchema)]
 pub struct PasskeyAttestation {
@@ -253,7 +259,7 @@ pub async fn signup(
             match wallet_address_str.parse::<evm::Address>() {
                 Ok(wallet_address) => {
                     // TOKEN_ID 1 = API access capability token
-                    let token_id = evm::U256::from(1);
+                    let token_id = evm::U256::from(API_ACCESS_TOKEN_ID);
                     let amount = evm::U256::from(1);
                     let calldata = evm::EvmClient::encode_mint(wallet_address, token_id, amount);
 
@@ -307,13 +313,12 @@ pub async fn signup(
     }
 
     // Step 5: Issue session JWT
-    let duration_hours = 8;
-    let token = jwt::create_session_token(jwt_keys, person.id, duration_hours)
+    let token = jwt::create_session_token(jwt_keys, person.id, SESSION_DURATION_HOURS)
         .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
 
     let cookie = format!(
         "session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={}",
-        duration_hours * 3600
+        SESSION_DURATION_HOURS * 3600
     );
 
     Ok((
@@ -322,7 +327,7 @@ pub async fn signup(
         Json(TokenResponse {
             access_token: token,
             token_type: "Bearer".to_string(),
-            expires_in: duration_hours * 3600,
+            expires_in: SESSION_DURATION_HOURS * 3600,
         }),
     ))
 }
@@ -370,13 +375,12 @@ pub async fn login(
         return Err(ApiError::BadRequest("Invalid credentials".to_string()));
     }
 
-    let duration_hours = 8;
-    let token = jwt::create_session_token(jwt_keys, person.id, duration_hours)
+    let token = jwt::create_session_token(jwt_keys, person.id, SESSION_DURATION_HOURS)
         .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
 
     let cookie = format!(
         "session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={}",
-        duration_hours * 3600
+        SESSION_DURATION_HOURS * 3600
     );
 
     Ok((
@@ -385,7 +389,7 @@ pub async fn login(
         Json(TokenResponse {
             access_token: token,
             token_type: "Bearer".to_string(),
-            expires_in: duration_hours * 3600,
+            expires_in: SESSION_DURATION_HOURS * 3600,
         }),
     ))
 }

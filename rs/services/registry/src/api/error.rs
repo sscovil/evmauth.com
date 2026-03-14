@@ -44,6 +44,10 @@ impl From<RepositoryError> for ApiError {
             RepositoryError::ConstraintViolation(msg) => {
                 ApiError::BadRequest(format!("Constraint violation: {msg}"))
             }
+            RepositoryError::Internal(msg) => {
+                tracing::error!("Internal error: {msg}");
+                ApiError::Internal("Internal error".to_string())
+            }
         }
     }
 }

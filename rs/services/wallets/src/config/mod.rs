@@ -2,12 +2,23 @@ use std::env;
 
 use alloy::primitives::Address;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
     pub turnkey: turnkey::client::TurnkeyConfig,
     pub evm: evm::EvmConfig,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("pg", &self.pg)
+            .field("redis", &self.redis)
+            .field("turnkey", &self.turnkey)
+            .field("evm", &self.evm)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]

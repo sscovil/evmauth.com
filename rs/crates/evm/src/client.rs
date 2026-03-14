@@ -33,7 +33,7 @@ impl EvmClient {
         let url: Url = config
             .rpc_url
             .parse()
-            .map_err(|e| EvmError::Config(format!("Invalid RPC URL: {e}")))?;
+            .map_err(|e| EvmError::Config(format!("invalid rpc url: {e}")))?;
 
         let provider = ProviderBuilder::new().connect_http(url);
 

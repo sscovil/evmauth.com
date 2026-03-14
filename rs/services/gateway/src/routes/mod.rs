@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use crate::proxy::handler::{AppState, proxy_handler};
 
+const HEALTH_CHECK_TIMEOUT_SECS: u64 = 2;
+
 async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // Use service-discovery crate for health checking
     let health = service_discovery::check_all_services_health(
         &state.client,
         &state.config.services,
         &["/health"],
-        2, // 2 second timeout
+        HEALTH_CHECK_TIMEOUT_SECS,
     )
     .await;
 

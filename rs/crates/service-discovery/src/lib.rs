@@ -3,6 +3,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+/// Errors that can occur during service discovery
+#[derive(Debug, thiserror::Error)]
+pub enum DiscoveryError {
+    #[error("failed to read services manifest: {0}")]
+    ManifestRead(#[from] std::io::Error),
+}
+
 /// Configuration for a discovered service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
@@ -91,7 +98,7 @@ impl DiscoveryOptions {
 /// Discover services from manifest file
 ///
 /// Returns a list of ServiceConfig with base URLs (without trailing paths)
-pub fn discover_services(options: &DiscoveryOptions) -> Result<Vec<ServiceConfig>, anyhow::Error> {
+pub fn discover_services(options: &DiscoveryOptions) -> Result<Vec<ServiceConfig>, DiscoveryError> {
     let manifest_path = Path::new("/app/services-manifest.txt");
     let mut services = Vec::new();
 
@@ -128,14 +135,18 @@ pub struct ServiceHealth {
     pub status: HealthStatus,
 }
 
+/// Health status of a discovered service
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
+    /// Service is responding normally
     Healthy,
+    /// Service is not responding or returning errors
     Unhealthy,
 }
 
 impl HealthStatus {
+    /// Returns true if the service is healthy
     pub fn is_healthy(&self) -> bool {
         matches!(self, HealthStatus::Healthy)
     }
@@ -157,14 +168,18 @@ pub struct AggregatedHealth {
     pub services: HashMap<String, String>,
 }
 
+/// Aggregated health status across all services
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OverallStatus {
+    /// All services are healthy
     Healthy,
+    /// One or more services are unhealthy
     Degraded,
 }
 
 impl OverallStatus {
+    /// Returns true if all services are healthy
     pub fn is_healthy(&self) -> bool {
         matches!(self, OverallStatus::Healthy)
     }

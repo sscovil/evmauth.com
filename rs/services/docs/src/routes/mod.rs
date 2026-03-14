@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct AppState {
     pub config: Config,
     pub aggregator: Aggregator,
+    pub http_client: reqwest::Client,
 }
 
 /// Serve Swagger UI HTML
@@ -40,11 +41,9 @@ async fn list_services(
 
 /// Health check endpoint that also checks all discovered services
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let client = reqwest::Client::new();
-
     // Use service-discovery crate for health checking
     let health = service_discovery::check_all_services_health(
-        &client,
+        &state.http_client,
         &state.config.services,
         &["/health"],
         2, // 2 second timeout

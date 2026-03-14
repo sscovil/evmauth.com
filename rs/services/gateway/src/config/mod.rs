@@ -3,6 +3,11 @@ use std::env;
 // Re-export from service-discovery crate
 pub use service_discovery::ServiceConfig;
 
+const DEFAULT_PORT: u16 = 8000;
+const DEFAULT_GATEWAY_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_EXCLUDE_SERVICES: &str = "gateway,db";
+const DEFAULT_SERVICE_PORT: u16 = 8000;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
@@ -17,12 +22,12 @@ impl Config {
         let port = env::var("PORT")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(8000);
+            .unwrap_or(DEFAULT_PORT);
 
         let timeout_secs = env::var("GATEWAY_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_GATEWAY_TIMEOUT_SECS);
 
         let services = Self::discover_services()?;
 
@@ -35,7 +40,8 @@ impl Config {
 
     fn discover_services() -> Result<Vec<ServiceConfig>, anyhow::Error> {
         // Get exclusion list from env (default: "gateway,db")
-        let exclude_str = env::var("EXCLUDE_SERVICES").unwrap_or_else(|_| "gateway,db".to_string());
+        let exclude_str =
+            env::var("EXCLUDE_SERVICES").unwrap_or_else(|_| DEFAULT_EXCLUDE_SERVICES.to_string());
         let exclude_services: Vec<String> = exclude_str
             .split(',')
             .map(|s| s.trim().to_string())
@@ -57,8 +63,8 @@ impl Config {
             .exclude_services(exclude_services)
             .service_name_prefix(service_name_prefix)
             .domain_suffix(domain_suffix)
-            .service_port(8000);
+            .service_port(DEFAULT_SERVICE_PORT);
 
-        service_discovery::discover_services(&options)
+        Ok(service_discovery::discover_services(&options)?)
     }
 }

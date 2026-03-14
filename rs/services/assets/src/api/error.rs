@@ -8,12 +8,17 @@ use serde_json::json;
 use crate::repository::RepositoryError;
 use crate::s3::S3Error;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    #[error("resource not found")]
     NotFound,
+    #[error("bad request: {0}")]
     BadRequest(String),
+    #[error("internal server error: {0}")]
     Internal(String),
+    #[error("payload too large: {0}")]
     PayloadTooLarge(String),
+    #[error("unsupported media type: {0}")]
     UnsupportedMediaType(String),
 }
 
