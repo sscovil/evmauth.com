@@ -1,3 +1,4 @@
+import { config } from '@/lib/config';
 import type { SessionOptions } from 'iron-session';
 
 export interface SessionData {
@@ -7,14 +8,12 @@ export interface SessionData {
 }
 
 export const sessionOptions: SessionOptions = {
-    password:
-        process.env.SESSION_SECRET ??
-        'this-is-a-development-secret-that-must-be-changed-in-production',
+    password: config.sessionSecret,
     cookieName: 'evmauth-dashboard',
     cookieOptions: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: config.isProduction,
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: 'strict',
         maxAge: 28800, // 8 hours, matches backend JWT
     },
 };

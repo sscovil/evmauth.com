@@ -1,23 +1,45 @@
+import { config } from '@/lib/config';
 import type { SessionData } from '@/lib/session';
 import { sessionOptions } from '@/lib/session';
-import type { PersonResponse, TokenResponse } from '@/types/api';
 import { getIronSession } from 'iron-session';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
-const BACKEND_URL = process.env.BACKEND_URL ?? 'http://gateway:8000';
+const LoginRequestSchema = z.object({ email: z.string().email() });
 
-export async function POST(request: Request) {
-    const body = (await request.json()) as { email: string };
+const TokenResponseSchema = z.object({
+    access_token: z.string(),
+    token_type: z.string(),
+    expires_in: z.number(),
+});
+
+const PersonResponseSchema = z.object({
+    id: z.string(),
+    display_name: z.string(),
+    description: z.string().nullable(),
+    auth_provider_name: z.string(),
+    auth_provider_ref: z.string(),
+    primary_email: z.string(),
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+
+export async function POST(request: Request): Promise<NextResponse> {
+    const parsed = LoginRequestSchema.safeParse(await request.json());
+    if (!parsed.success) {
+        return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+    const { email } = parsed.data;
 
     // Call backend login
-    const loginResponse = await fetch(`${BACKEND_URL}/auth/auth/login`, {
+    const loginResponse = await fetch(`${config.backendUrl}/auth/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            primary_email: body.email,
+            primary_email: email,
             auth_provider_name: 'email',
-            auth_provider_ref: body.email,
+            auth_provider_ref: email,
         }),
     });
 
@@ -26,10 +48,15 @@ export async function POST(request: Request) {
         return NextResponse.json(error, { status: loginResponse.status });
     }
 
-    const tokenData = (await loginResponse.json()) as TokenResponse;
+    let tokenData: z.infer<typeof TokenResponseSchema>;
+    try {
+        tokenData = TokenResponseSchema.parse(await loginResponse.json());
+    } catch {
+        return NextResponse.json({ error: 'Invalid response from auth service' }, { status: 502 });
+    }
 
     // Fetch the full person record using the session
-    const meResponse = await fetch(`${BACKEND_URL}/auth/me`, {
+    const meResponse = await fetch(`${config.backendUrl}/auth/me`, {
         headers: {
             Authorization: `${tokenData.token_type} ${tokenData.access_token}`,
         },
@@ -39,7 +66,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 });
     }
 
-    const person = (await meResponse.json()) as PersonResponse;
+    let person: z.infer<typeof PersonResponseSchema>;
+    try {
+        person = PersonResponseSchema.parse(await meResponse.json());
+    } catch {
+        return NextResponse.json({ error: 'Invalid response from auth service' }, { status: 502 });
+    }
 
     // Create iron-session
     const session = await getIronSession<SessionData>(await cookies(), sessionOptions);

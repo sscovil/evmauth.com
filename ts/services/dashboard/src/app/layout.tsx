@@ -1,13 +1,17 @@
 import { ThemeProvider } from '@evmauth/ui';
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 export const metadata: Metadata = {
     title: 'EVMAuth Dashboard',
     description: 'Manage your EVMAuth contracts, apps, and organization',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+interface RootLayoutProps {
+    children: ReactNode;
+}
+
+export default function RootLayout({ children }: RootLayoutProps): ReactElement {
     return (
         <html lang="en" suppressHydrationWarning>
             <body>

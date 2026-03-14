@@ -1,26 +1,32 @@
+import { config } from '@/lib/config';
+import type { SessionData } from '@/lib/session';
+import { sessionOptions } from '@/lib/session';
+import { getIronSession } from 'iron-session';
+import { cookies } from 'next/headers';
 import { type NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL ?? 'http://gateway:8000';
+async function proxyRequest(
+    request: NextRequest,
+    params: Promise<{ path: string[] }>,
+): Promise<NextResponse> {
+    const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
+    if (!session.personId) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
 
-async function proxyRequest(request: NextRequest, params: Promise<{ path: string[] }>) {
     const { path } = await params;
     const targetPath = path.join('/');
-    const url = `${BACKEND_URL}/${targetPath}${request.nextUrl.search}`;
+    const url = `${config.backendUrl}/${targetPath}${request.nextUrl.search}`;
 
     const headers = new Headers();
     headers.set('Content-Type', request.headers.get('Content-Type') ?? 'application/json');
     headers.set('Accept', request.headers.get('Accept') ?? 'application/json');
+    headers.set('X-Person-Id', session.personId);
 
     // Forward authorization if present
     const authorization = request.headers.get('Authorization');
     if (authorization) {
         headers.set('Authorization', authorization);
-    }
-
-    // Forward cookies to backend (for session cookie auth)
-    const cookie = request.headers.get('Cookie');
-    if (cookie) {
-        headers.set('Cookie', cookie);
     }
 
     const fetchOptions: RequestInit = {
@@ -38,12 +44,6 @@ async function proxyRequest(request: NextRequest, params: Promise<{ path: string
         'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
     });
 
-    // Forward Set-Cookie headers from backend to client
-    const setCookies = response.headers.getSetCookie();
-    for (const setCookie of setCookies) {
-        responseHeaders.append('Set-Cookie', setCookie);
-    }
-
     return new NextResponse(response.body, {
         status: response.status,
         statusText: response.statusText,
@@ -51,28 +51,37 @@ async function proxyRequest(request: NextRequest, params: Promise<{ path: string
     });
 }
 
-export async function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+export async function GET(
+    request: NextRequest,
+    context: { params: Promise<{ path: string[] }> },
+): Promise<NextResponse> {
     return proxyRequest(request, context.params);
 }
 
-export async function POST(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+export async function POST(
+    request: NextRequest,
+    context: { params: Promise<{ path: string[] }> },
+): Promise<NextResponse> {
     return proxyRequest(request, context.params);
 }
 
 export async function PATCH(
     request: NextRequest,
     context: { params: Promise<{ path: string[] }> },
-) {
+): Promise<NextResponse> {
     return proxyRequest(request, context.params);
 }
 
-export async function PUT(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+export async function PUT(
+    request: NextRequest,
+    context: { params: Promise<{ path: string[] }> },
+): Promise<NextResponse> {
     return proxyRequest(request, context.params);
 }
 
 export async function DELETE(
     request: NextRequest,
     context: { params: Promise<{ path: string[] }> },
-) {
+): Promise<NextResponse> {
     return proxyRequest(request, context.params);
 }

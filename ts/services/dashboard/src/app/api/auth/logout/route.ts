@@ -1,26 +1,25 @@
+import { config } from '@/lib/config';
 import type { SessionData } from '@/lib/session';
 import { sessionOptions } from '@/lib/session';
 import { getIronSession } from 'iron-session';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL ?? 'http://gateway:8000';
+export async function POST(): Promise<NextResponse> {
+    const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
 
-export async function POST(request: Request) {
-    // Forward the session cookie to the backend logout endpoint
-    const cookieHeader = request.headers.get('Cookie');
+    // Call backend logout with person identification
     const headers = new Headers({ 'Content-Type': 'application/json' });
-    if (cookieHeader) {
-        headers.set('Cookie', cookieHeader);
+    if (session.personId) {
+        headers.set('X-Person-Id', session.personId);
     }
 
-    const logoutResponse = await fetch(`${BACKEND_URL}/auth/auth/logout`, {
+    const logoutResponse = await fetch(`${config.backendUrl}/auth/auth/logout`, {
         method: 'POST',
         headers,
     });
 
     // Destroy iron-session regardless of backend response
-    const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
     session.destroy();
 
     // Forward Set-Cookie from backend (clears the session cookie)

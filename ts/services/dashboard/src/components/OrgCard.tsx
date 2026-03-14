@@ -3,6 +3,7 @@
 import type { OrgResponse } from '@/types/api';
 import { Badge, Card, Group, Text } from '@mantine/core';
 import Link from 'next/link';
+import type { ReactElement } from 'react';
 
 const visibilityColors: Record<OrgResponse['visibility'], string> = {
     personal: 'blue',
@@ -10,7 +11,11 @@ const visibilityColors: Record<OrgResponse['visibility'], string> = {
     public: 'green',
 };
 
-export function OrgCard({ org }: { org: OrgResponse }) {
+interface OrgCardProps {
+    org: OrgResponse;
+}
+
+export function OrgCard({ org }: OrgCardProps): ReactElement {
     return (
         <Card
             shadow="sm"

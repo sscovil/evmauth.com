@@ -4,7 +4,7 @@ import { getIronSession } from 'iron-session';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(): Promise<NextResponse> {
     const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
 
     if (!session.personId) {

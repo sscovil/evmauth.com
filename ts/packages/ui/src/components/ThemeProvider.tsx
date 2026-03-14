@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { theme } from '../theme';
 
 import '@mantine/core/styles.css';
@@ -12,7 +12,7 @@ interface ThemeProviderProps {
     children: ReactNode;
 }
 
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
     return (
         <MantineProvider theme={theme} defaultColorScheme="auto">
             <Notifications position="top-right" />

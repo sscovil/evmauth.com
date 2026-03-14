@@ -1,10 +1,12 @@
-'use client';
-
 import { UserMenu } from '@/components/UserMenu';
 import { AppShell, Group, NavLink, Text } from '@mantine/core';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+interface DashboardLayoutProps {
+    children: ReactNode;
+}
+
+export default function DashboardLayout({ children }: DashboardLayoutProps): ReactElement {
     return (
         <AppShell header={{ height: 60 }} navbar={{ width: 250, breakpoint: 'sm' }} padding="md">
             <AppShell.Header>

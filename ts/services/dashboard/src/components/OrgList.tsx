@@ -2,9 +2,11 @@
 
 import { OrgCard } from '@/components/OrgCard';
 import { useOrgs } from '@/lib/hooks';
+import type { Edge, OrgResponse } from '@/types/api';
 import { Alert, SimpleGrid, Skeleton, Stack, Text } from '@mantine/core';
+import type { ReactElement } from 'react';
 
-export function OrgList() {
+export function OrgList(): ReactElement {
     const { data, error, isLoading } = useOrgs();
 
     if (isLoading) {
@@ -25,7 +27,7 @@ export function OrgList() {
         );
     }
 
-    const orgs = data?.edges?.map((edge) => edge.node) ?? [];
+    const orgs = data?.edges?.map((edge: Edge<OrgResponse>) => edge.node) ?? [];
 
     if (orgs.length === 0) {
         return (
