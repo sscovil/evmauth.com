@@ -27,6 +27,8 @@ rs/
 │   ├── db/            # Database migrations
 │   ├── docs/          # OpenAPI aggregation
 │   └── assets/        # User uploaded file management
+├── tools/
+│   └── cli/           # Internal CLI tool (evmauth-cli)
 ├── crates/            # Shared libraries
 │   ├── evm/           # Alloy-based EVM interaction
 │   ├── pagination/

@@ -15,6 +15,7 @@ members = [
     "crates/service-discovery",
     "crates/evm",
     "crates/types",
+    "tools/cli",
 ]
 
 [workspace.package]

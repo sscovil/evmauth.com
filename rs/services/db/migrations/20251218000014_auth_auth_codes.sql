@@ -1,17 +1,9 @@
--- Authorization codes: short-lived single-use codes for the end-user
--- PKCE token exchange flow (code -> JWT).
--- Codes are stored hashed; the plaintext is returned once to the redirect URI.
-CREATE TABLE auth.auth_codes (
-    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code_hash               TEXT NOT NULL UNIQUE,
-    app_registration_id     UUID NOT NULL,
-    person_app_wallet_id    UUID NOT NULL,
-    code_challenge          TEXT NOT NULL,
-    redirect_uri            TEXT NOT NULL,
-    state                   TEXT NOT NULL,
-    expires_at              TIMESTAMPTZ NOT NULL,
-    used_at                 TIMESTAMPTZ,
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_auth_codes_code_hash ON auth.auth_codes(code_hash);
-CREATE INDEX idx_auth_codes_expires_at ON auth.auth_codes(expires_at);
+-- Auth codes are stored in Redis with TTL-based expiration, not PostgreSQL.
+--
+-- Key format:  auth_code:{sha256_hex}
+-- Value:       JSON { app_registration_id, entity_app_wallet_id, code_challenge, redirect_uri, state }
+-- TTL:         Configurable via AUTH_CODE_TTL_SECS (default 30 seconds)
+--
+-- This migration intentionally left empty. The original auth.auth_codes table
+-- has been replaced by Redis key-value storage. Expired codes are cleaned up
+-- automatically by Redis TTL -- no background cleanup task is needed.

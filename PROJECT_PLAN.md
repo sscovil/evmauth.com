@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-14 (rev 11)
+> **Last updated:** 2026-03-15 (rev 12)
 
 ---
 
@@ -46,7 +46,7 @@ EVMAuth is an authorization state management system built on the ERC-6909 multi-
 - Issue signed JWTs containing wallet address and contract reference (authentication only -- not authorization claims)
 - Implement a full PKCE-based authorization code exchange for end-user auth (code -> JWT)
 - Expose `GET /accounts/{address}` for runtime authorization queries, authenticated via ERC-712 request signing (reads live on-chain state)
-- Provide a dashboard for deployers to manage contracts, operator access, and app registrations
+- Provide a developer console for deployers to manage contracts, operator access, and app registrations
 - Provide a hosted auth UI for end users (OAuth redirect flow)
 
 ---
@@ -204,6 +204,16 @@ evmauth.com/
 │   │           ├── migrations/    # All migrations (all schemas)
 │   │           ├── seeds/
 │   │           └── docs/
+│   ├── tools/                     # Internal tools
+│   │   └── cli/                   # evmauth-cli: contract deployment, dev funding
+│   │       ├── Cargo.toml
+│   │       └── src/
+│   │           ├── main.rs
+│   │           └── commands/
+│   │               ├── mod.rs
+│   │               ├── deploy_beacon.rs
+│   │               ├── deploy_platform.rs
+│   │               └── fund.rs
 │   └── crates/                    # Shared libraries
 │       ├── pagination/            # EXISTING: Cursor-based pagination (Relay spec)
 │       ├── pagination-macros/     # EXISTING: Proc macros for pagination
@@ -217,13 +227,13 @@ evmauth.com/
 │               ├── client.rs      # EvmConfig, EvmClient (read-only Alloy HTTP provider)
 │               └── evmauth.rs     # sol! bindings (balanceOf, isOperator, mint), encode_mint()
 ├── ts/                            # EXISTING: TypeScript frontend (PNPM workspace root)
+│   ├── Dockerfile                 # Unified multi-stage build (dev/builder/runtime, SERVICE build arg)
 │   ├── pnpm-workspace.yaml        # Workspace definition
 │   ├── package.json               # Root scripts (e.g. pnpm check)
 │   ├── biome.json                 # Shared Biome config
 │   ├── tsconfig.json              # Base TypeScript config
 │   ├── services/                  # Next.js apps (each is an independent app)
-│   │   └── dashboard/             # PARTIAL: Deployer dashboard + hosted auth UI
-│   │       ├── Dockerfile
+│   │   └── console/               # PARTIAL: Developer console + hosted auth UI
 │   │       ├── package.json
 │   │       ├── service.json       # Tilt metadata (ports, depends_on, etc.)
 │   │       ├── next.config.ts
@@ -238,7 +248,7 @@ evmauth.com/
 │   │           │   │   ├── layout.tsx     # AppShell with UserMenu + sidebar
 │   │           │   │   ├── page.tsx       # Org overview (OrgList)
 │   │           │   │   ├── loading.tsx    # Skeleton loading state
-│   │           │   │   ├── error.tsx      # Dashboard error boundary
+│   │           │   │   ├── error.tsx      # Console error boundary
 │   │           │   │   └── [orgSlug]/
 │   │           │   │       ├── contracts/
 │   │           │   │       ├── apps/
@@ -336,19 +346,19 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 | Dependency | Purpose | Location |
 |---|---|---|
 | `pnpm` | Package manager (workspace-native) | Root |
-| `next` latest stable | Framework | `ts/services/dashboard` |
+| `next` latest stable | Framework | `ts/services/console` |
 | `@mantine/core` + `@mantine/hooks` + `@mantine/form` + `@mantine/notifications` | UI components | `ts/packages/ui` |
-| `iron-session` | Encrypted cookie sessions (deployer dashboard auth) | `ts/services/dashboard` |
-| `swr` | Data fetching / cache invalidation | `ts/services/dashboard` |
-| `zod` | Runtime validation (API request/response schemas) | `ts/services/dashboard` |
-| `@types/cookie` | Type definitions for iron-session's cookie dependency | `ts/services/dashboard` (devDependency) |
+| `iron-session` | Encrypted cookie sessions (deployer console auth) | `ts/services/console` |
+| `swr` | Data fetching / cache invalidation | `ts/services/console` |
+| `zod` | Runtime validation (API request/response schemas) | `ts/services/console` |
+| `@types/cookie` | Type definitions for iron-session's cookie dependency | `ts/services/console` (devDependency) |
 
 **To add when implementing end-user auth (Phase 3):**
 
 | Dependency | Purpose | Location |
 |---|---|---|
-| `@turnkey/sdk-browser` | End-user Turnkey interactions | `ts/services/dashboard` |
-| `@turnkey/sdk-react` | Turnkey provider/hooks | `ts/services/dashboard` |
+| `@turnkey/sdk-browser` | End-user Turnkey interactions | `ts/services/console` |
+| `@turnkey/sdk-react` | Turnkey provider/hooks | `ts/services/console` |
 | `typescript` | | Root |
 | `biome` | Linting + formatting (replaces ESLint + Prettier) | Root |
 
@@ -377,13 +387,15 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 
 | Domain Concept | Owning Service | Schema |
 |---|---|---|
-| Person, Org, OrgMember, AuthCode | auth | `auth` |
+| Person, Org, OrgMember | auth | `auth` |
 | EntityWallet, EntityAppWallet, DelegatedAccount | wallets | `wallets` |
 | AppRegistration, Contract, OperatorGrant | registry | `registry` |
 | ApiRequestLog, ContractEvent | analytics | `analytics` |
 | File, Doc, Image, Media | assets | `assets` |
 
 Cross-service references (e.g., `org_id` in `registry.app_registrations`) are stored as plain UUIDs without FK constraints. Referential integrity is enforced via internal API calls.
+
+Auth codes are stored in Redis with TTL (not PostgreSQL). See Section 5 for key format details.
 
 ### Person (auth service -- existing as `auth.people`)
 
@@ -399,7 +411,7 @@ Members have roles: `owner`, `admin`, `member`.
 
 - `owner`: can transfer org ownership, delete org, manage members
 - `admin`: can deploy contracts, manage app registrations, grant/revoke platform operator access
-- `member`: read-only access to dashboard
+- `member`: read-only access to console
 
 ### OrgMember (auth service -- existing as `auth.orgs_people`)
 
@@ -460,29 +472,19 @@ The following tables are already implemented with full migration support, trigge
 - `auth.orgs` -- Inherits from entities. Adds: `owner_id` (FK people), `visibility` ('personal'/'private'/'public'). Unique index ensures one personal org per owner. Triggers sync owner role in `orgs_people` and prevent deletion of last personal workspace.
 - `auth.orgs_people` -- Junction: `org_id`, `member_id`, `role`, `created_at`, `updated_at`. PK `(org_id, member_id)`. Unique index enforces one owner per org. Triggers validate membership constraints.
 
-**To add (auth schema extensions):**
+**Redis-stored data (auth service):**
 
-```sql
--- Migration: auth_auth_codes
+Auth codes for the PKCE token exchange flow are stored in Redis, not PostgreSQL. Redis TTL handles expiration automatically -- no background cleanup task is needed.
 
--- Authorization codes: short-lived single-use codes for the end-user
--- PKCE token exchange flow (code -> JWT).
--- Codes are stored hashed; the plaintext is returned once to the redirect URI.
-CREATE TABLE auth.auth_codes (
-    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code_hash               TEXT NOT NULL UNIQUE,
-    app_registration_id     UUID NOT NULL,          -- references registry.app_registrations (no FK)
-    entity_app_wallet_id    UUID NOT NULL,           -- references wallets.entity_app_wallets (no FK)
-    code_challenge          TEXT NOT NULL,
-    redirect_uri            TEXT NOT NULL,
-    state                   TEXT NOT NULL,
-    expires_at              TIMESTAMPTZ NOT NULL,
-    used_at                 TIMESTAMPTZ,
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_auth_codes_code_hash ON auth.auth_codes(code_hash);
-CREATE INDEX idx_auth_codes_expires_at ON auth.auth_codes(expires_at);
 ```
+Key:    auth_code:{sha256_hex}
+Value:  JSON { app_registration_id, entity_app_wallet_id, code_challenge, redirect_uri, state }
+TTL:    Configurable via AUTH_CODE_TTL_SECS (default 30 seconds)
+```
+
+- Create: `SET auth_code:{hash} {json} EX {ttl}`
+- Exchange: `GET auth_code:{hash}` then `DEL auth_code:{hash}` (atomic via Redis transaction or Lua script)
+- No cleanup task needed -- expired keys vanish automatically
 
 ### `wallets` Schema (wallets service -- to build)
 
@@ -622,7 +624,7 @@ CREATE SCHEMA IF NOT EXISTS analytics;
 
 -- Migration: analytics_api_requests
 
--- Log of authorization query API requests. Used for dashboard analytics.
+-- Log of authorization query API requests. Used for console analytics.
 CREATE TABLE analytics.api_requests (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id       TEXT NOT NULL,              -- app registration client_id
@@ -784,6 +786,8 @@ pub struct AppState {
 }
 ```
 
+**Config includes:** `AUTH_CODE_TTL_SECS` (default 30) -- configurable TTL for PKCE authorization codes stored in Redis.
+
 ### Wallets Service (To Build)
 
 **Schema owned:** `wallets`
@@ -876,14 +880,14 @@ pub struct AppState {
 
 **Schema owned:** `analytics`
 
-Indexes contract events from the chain and logs API requests. Exposes metrics for the deployer dashboard.
+Indexes contract events from the chain and logs API requests. Exposes metrics for the developer console.
 
 ```
 /analytics/                         # Via gateway: /analytics/*
 ├── GET    /health
 ├── GET    /openapi.json
 │
-├── orgs/{org_id}/usage/            # Dashboard analytics
+├── orgs/{org_id}/usage/            # Console analytics
 │   ├── GET    /requests            # API request volume/breakdown
 │   └── GET    /events              # Contract event history
 │
@@ -919,7 +923,7 @@ Three middleware layers used across services:
 
 ### JWT Strategy
 
-**Platform session JWT** (deployer dashboard): RS256, signed with platform private key. Claims:
+**Platform session JWT** (deployer console): RS256, signed with platform private key. Claims:
 
 ```json
 {
@@ -1083,9 +1087,9 @@ The Tiltfile auto-discovers TypeScript services the same way it discovers Rust s
 
 Shared packages are consumed as workspace dependencies (e.g., `"@evmauth/ui": "workspace:*"` in each service's `package.json`).
 
-### Dashboard Service (`ts/services/dashboard`)
+### Console Service (`ts/services/console`)
 
-This is the primary frontend application. It serves the deployer dashboard and the hosted end-user auth UI.
+This is the primary frontend application. It serves the developer console and the hosted end-user auth UI.
 
 #### Architecture Principles
 
@@ -1131,9 +1135,9 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 
 #### Session Management
 
-The frontend uses `iron-session` for encrypted cookie-based sessions. The iron-session cookie (`evmauth-dashboard`) stores `{ personId, email, displayName }` with `httpOnly: true`, `secure` in production, `sameSite: 'strict'`, and 8-hour max age. The `SESSION_SECRET` is loaded via `lib/config.ts` which throws if the env var is missing (no hardcoded fallback).
+The frontend uses `iron-session` for encrypted cookie-based sessions. The iron-session cookie (`evmauth-console`) stores `{ personId, email, displayName }` with `httpOnly: true`, `secure` in production, `sameSite: 'strict'`, and 8-hour max age. The `SESSION_SECRET` is loaded via `lib/config.ts` which throws if the env var is missing (no hardcoded fallback).
 
-Next.js API routes (`/api/auth/login`, `/api/auth/signup`, `/api/auth/logout`) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the dashboard manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
+Next.js API routes (`/api/auth/login`, `/api/auth/signup`, `/api/auth/logout`) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the console manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
 
 The API proxy (`/api/proxy/[...path]`) reads the iron-session server-side, rejects unauthenticated requests, and forwards requests to the backend with an `X-Person-Id` header. Raw browser cookies are never forwarded.
 
@@ -1141,7 +1145,7 @@ The API proxy (`/api/proxy/[...path]`) reads the iron-session server-side, rejec
 
 #### Data Fetching
 
-Use `swr` for all dashboard data. SWR hooks are defined in `lib/hooks.ts` (e.g., `useMe`, `useOrgs`) -- never inline `useSWR` in components. Every component consuming a SWR hook handles loading, error, and success states. Use `mutate` after write operations to revalidate all affected cache keys.
+Use `swr` for all console data. SWR hooks are defined in `lib/hooks.ts` (e.g., `useMe`, `useOrgs`) -- never inline `useSWR` in components. Every component consuming a SWR hook handles loading, error, and success states. Use `mutate` after write operations to revalidate all affected cache keys.
 
 ```typescript
 // src/lib/api-client.ts
@@ -1162,8 +1166,9 @@ To add a new Next.js app (e.g., an internal admin tool):
 
 1. Create `ts/services/{name}/` with `package.json`, `service.json`, `next.config.ts`
 2. Add `@evmauth/ui` and `@evmauth/tsconfig` as workspace dependencies
-3. The Tiltfile auto-discovers it -- no Tiltfile changes needed
+3. The Tiltfile auto-discovers it -- no Tiltfile changes needed (uses unified `ts/Dockerfile` with `SERVICE` build arg)
 4. Run `pnpm install` from the `ts/` root to link workspace dependencies
+5. No per-service Dockerfile needed -- the unified `ts/Dockerfile` handles all services
 
 ---
 
@@ -1238,7 +1243,7 @@ GET https://auth.evmauth.io/auth/end-user/login
 1. Auth service calls registry internal API to validate `client_id` exists and `redirect_uri` is in `callback_urls` -- reject before initiating auth if invalid
 2. User authenticates via OAuth on the EVMAuth hosted UI
 3. Auth service calls wallets internal API to resolve or create end-user sub-org and wallet
-4. Auth service generates authorization code (32 bytes, base64url), stores `SHA-256(code)` in `auth.auth_codes`
+4. Auth service generates authorization code (32 bytes, base64url), stores `SHA-256(code)` in Redis with configurable TTL
 5. Redirects to `redirect_uri?code=<plaintext_code>&state=<state>`
 
 **Step 3 -- Token exchange** (deployer backend -> EVMAuth platform):
@@ -1255,9 +1260,9 @@ grant_type=authorization_code
 ```
 
 Backend:
-1. Hash the submitted `code` and look up `auth.auth_codes` by `code_hash`
-2. Reject if: expired, already used, `redirect_uri` mismatch, or `SHA-256(code_verifier) != code_challenge`
-3. Mark code as used (`used_at = now()`) immediately -- codes are single-use
+1. Hash the submitted `code` and look up in Redis by `auth_code:{hash}`
+2. Reject if: not found (expired or already used), `redirect_uri` mismatch, or `SHA-256(code_verifier) != code_challenge`
+3. Delete the key from Redis immediately -- codes are single-use
 4. Auth service calls wallets internal API to get wallet address for the JWT claims
 5. Issue end-user app JWT and return it
 
@@ -1298,7 +1303,7 @@ Deployment happens in two phases:
 
 **Phase 1 -- App registration creation:**
 
-1. Deployer creates an app registration in the dashboard (`POST /registry/orgs/{org_id}/apps`)
+1. Deployer creates an app registration in the console (`POST /registry/orgs/{org_id}/apps`)
 2. Registry service calls wallets `POST /internal/entity-app-wallet` with `{ entity_id: org_id, app_registration_id }`
 3. Wallets service derives a new account from the org's HD wallet, stores in `wallets.entity_app_wallets`
 4. The derived address will become the EVMAuth default admin for this app's proxy contract
@@ -1310,11 +1315,11 @@ Deployment happens in two phases:
 3. Registry encodes BeaconProxy deployment with init_data setting EVMAuth default admin to the org's app-specific derived address
 4. Registry calls wallets `POST /internal/send-tx` to deploy (platform operator wallet pays gas and owns the proxy at the EVM level)
 5. Registry inserts `registry.contracts` row
-6. Dashboard displays the new contract with a block explorer link
+6. Console displays the new contract with a block explorer link
 
 ### Operator Grant Flow
 
-1. Deployer clicks "Grant API access" in dashboard
+1. Deployer clicks "Grant API access" in console
 2. Frontend calls `POST /registry/orgs/{org_id}/contracts/{id}/grant-operator`
 3. Registry service calls wallets internal API to sign the `setOperator` transaction via the org's delegated account (the `setOperator` call is made from the org's app-specific derived address, which holds the EVMAuth default admin role)
 4. Registry service broadcasts the signed tx to Radius, records in `registry.operator_grants`
@@ -1401,12 +1406,13 @@ The Tiltfile auto-discovers services in `rs/services/`. No changes needed to the
 The Tiltfile extends the same auto-discovery pattern to `ts/services/`. TypeScript services use a `service.json` for Tilt metadata (same schema as Rust services) and run `pnpm dev` for hot reload instead of `cargo watch`.
 
 Each TypeScript service gets its own Docker Compose service entry with:
+- Build using the unified `ts/Dockerfile` with `target: dev` and `SERVICE` build arg (mirrors the `rs/Dockerfile` pattern)
 - Volume mounts for source code and workspace packages
 - Named volumes for `node_modules` and `.next` cache
 - Port mappings from `service.json`
 - Dependencies on infrastructure and backend services
 
-Example `ts/services/dashboard/service.json`:
+Example `ts/services/console/service.json`:
 
 ```json
 {
@@ -1416,6 +1422,23 @@ Example `ts/services/dashboard/service.json`:
 ```
 
 No changes needed to the Tiltfile when adding new TypeScript services -- just create the service directory with a `package.json` and `service.json` and the Tiltfile picks it up automatically.
+
+### Contract Deployment (Local Dev)
+
+Since all signing goes through Turnkey, Anvil default private keys cannot be used for contract deployment. Use the internal CLI tool (`evmauth-cli`):
+
+1. Fund the platform operator wallet on local Anvil (uses Anvil account #0, which is acceptable for funding since it's not a platform operation):
+   ```bash
+   cargo run --package evmauth-cli -- fund <platform-operator-address> --amount 100
+   ```
+2. Deploy the beacon implementation:
+   ```bash
+   cargo run --package evmauth-cli -- deploy beacon
+   ```
+3. Deploy the platform proxy:
+   ```bash
+   cargo run --package evmauth-cli -- deploy platform --beacon <beacon-address>
+   ```
 
 ---
 
@@ -1432,7 +1455,7 @@ No changes needed to the Tiltfile when adding new TypeScript services -- just cr
 | `evmauth-analytics` | `rs/` Dockerfile (analytics binary) | Internal network only |
 | `evmauth-assets` | `rs/` Dockerfile (assets binary) | Internal network only |
 | `evmauth-docs` | `rs/` Dockerfile (docs binary) | Internal network only |
-| `evmauth-dashboard` | `ts/services/dashboard/` Dockerfile | Next.js, NODE_ENV=production |
+| `evmauth-console` | `ts/` Dockerfile (`SERVICE=console`) | Next.js, NODE_ENV=production |
 | `evmauth-postgres` | Railway Postgres plugin | Managed, auto-backups |
 | `evmauth-redis` | Railway Redis plugin | Managed |
 
@@ -1440,31 +1463,43 @@ No changes needed to the Tiltfile when adding new TypeScript services -- just cr
 
 The existing `rs/Dockerfile` is a multi-stage build that compiles all service binaries. Each Railway service selects its binary via the CMD override.
 
-### Frontend Production Dockerfile (`ts/services/dashboard/Dockerfile`)
+### Frontend Production Dockerfile (`ts/Dockerfile`)
 
-The Dockerfile builds from the PNPM workspace root (`ts/`) to resolve workspace dependencies, then produces a standalone Next.js output.
+A unified multi-stage Dockerfile at `ts/Dockerfile` (mirroring the `rs/Dockerfile` pattern) builds any TypeScript service via the `SERVICE` build arg. It has three stages: `dev` (Tilt hot reload), `builder` (production build), and `runtime` (standalone Next.js output).
 
 ```dockerfile
-FROM node:22-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
-WORKDIR /app
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /workspace
+
+FROM base AS dev
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY packages/ ./packages/
+ARG SERVICE
+COPY services/${SERVICE}/package.json ./services/${SERVICE}/
+RUN pnpm install || true
+CMD ["sh", "-c", "pnpm --filter ${SERVICE} dev"]
+
+FROM base AS builder
+ARG SERVICE
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/ ./packages/
-COPY services/dashboard/package.json ./services/dashboard/
+COPY services/${SERVICE}/package.json ./services/${SERVICE}/
 RUN pnpm install --frozen-lockfile
-COPY services/dashboard/ ./services/dashboard/
-RUN pnpm --filter dashboard run build
+COPY services/${SERVICE}/ ./services/${SERVICE}/
+RUN pnpm --filter ${SERVICE} run build
 
-FROM node:22-alpine
+FROM node:22-alpine AS runtime
 WORKDIR /app
-COPY --from=builder /app/services/dashboard/.next/standalone ./
-COPY --from=builder /app/services/dashboard/.next/static ./.next/static
-COPY --from=builder /app/services/dashboard/public ./public
+ARG SERVICE
+COPY --from=builder /workspace/services/${SERVICE}/.next/standalone ./
+COPY --from=builder /workspace/services/${SERVICE}/.next/static ./.next/static
+COPY --from=builder /workspace/services/${SERVICE}/public ./public
 EXPOSE 3000
 CMD ["node", "server.js"]
 ```
 
-Enable `output: 'standalone'` in `next.config.ts`. The build context for Railway should be set to `ts/`.
+Enable `output: 'standalone'` in `next.config.ts`. The build context for Railway should be set to `ts/`. Each Railway frontend service sets the `SERVICE` build arg to select which service to build.
 
 ### Railway Config (railway.toml)
 
@@ -1511,17 +1546,17 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Auth service: internal APIs for cross-service person/org lookup (`/internal/people/{id}`, `/internal/orgs/{id}`)
 - [x] Frontend: PNPM workspace scaffolding (`ts/pnpm-workspace.yaml`, root `package.json`, `biome.json`, `tsconfig.json`)
 - [x] Frontend: `@evmauth/ui` package (Mantine theme, ThemeProvider), `@evmauth/tsconfig` package (base + nextjs configs)
-- [x] Frontend: Dashboard service scaffolding (`ts/services/dashboard/`), `service.json`, `Dockerfile.dev`, API proxy route
+- [x] Frontend: Console service scaffolding (`ts/services/console/`), `service.json`, API proxy route
 - [x] Frontend: Tiltfile TypeScript service auto-discovery (extend `discover_services` for `ts/services/`)
 - [x] Docker init scripts for `registry` and `analytics` schemas
 - [x] Workspace resolver set to v3 for edition 2024 compatibility
-- [x] Service `.env.example` files: rewrite all with empty secrets, add missing vars (JWT, wallets URL); create wallets and dashboard env files
+- [x] Service `.env.example` files: rewrite all with empty secrets, add missing vars (JWT, wallets URL); create wallets and console env files
 - [x] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
 - [x] EVM crate: Alloy HTTP provider, EVMAuth6909 bindings (balanceOf, isOperator, encode_mint)
 - [x] Platform contract config (`PLATFORM_CONTRACT_ADDRESS`, `RADIUS_RPC_URL`, `RADIUS_CHAIN_ID`) in auth service
 - [x] Capability token minting on new org creation (best-effort mint via wallets service `/internal/sign`)
 - [x] Crate convention: shared crates accept config structs, never read environment variables directly
-- [x] Frontend: Dashboard login page, dashboard shell, org overview page
+- [x] Frontend: Console login page, console shell, org overview page
 - [x] Frontend: Code quality audit -- all 9 sections pass clean (TypeScript strictness, React correctness, API proxy security, session hardening, security, component architecture, Biome, App Router, workspace hygiene)
 - [x] Frontend: `lib/config.ts` centralizes all `process.env` access with validation
 - [x] Frontend: `lib/schemas.ts` shared Zod schemas for auth response validation
@@ -1554,18 +1589,18 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] Update app registration creation to trigger entity app wallet derivation
 - [ ] Update contract deployment to use org's entity app wallet as EVMAuth default admin
 - [ ] EVM crate: helper for encoding proxy initializer data with admin address
-- [ ] Dashboard: App registration pages, contract deployment wizard, operator grant UI
+- [ ] Internal CLI tool (`evmauth-cli`) for beacon and platform contract deployment
+- [ ] Console: App registration pages, contract deployment wizard, operator grant UI
 
 ### Phase 3 -- End User Auth
 
 - [ ] Hosted auth UI (`/auth/end-user/login`) with `client_id` / `redirect_uri` / PKCE parameter validation (auth calls registry internal API)
 - [ ] End user sub-org creation on first login (auth calls wallets internal API)
 - [ ] HD wallet account creation per (person, app_registration) via wallets service
-- [ ] Authorization code generation, storage (hashed in `auth.auth_codes`), and issuance
-- [ ] PKCE token exchange endpoint with code_verifier validation, single-use enforcement, and expiry check
+- [ ] Authorization code generation, storage (hashed in Redis with TTL), and issuance
+- [ ] PKCE token exchange endpoint with code_verifier validation, single-use enforcement (Redis DEL), and expiry check
 - [ ] End-user app JWT issuance (auth calls wallets internal API for wallet address)
 - [ ] JWKS endpoint (`GET /auth/.well-known/jwks.json`)
-- [ ] Auth code cleanup job (Tokio background task, delete expired unused codes every 5 minutes)
 - [ ] End-user wallet self-service page (frontend calls wallets service via gateway)
 - [ ] Passkey backup authenticator prompt on first login
 
@@ -1584,7 +1619,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [ ] Analytics service: scaffold, `analytics` schema migrations
 - [ ] API request logging (internal endpoint called by registry)
 - [ ] Contract event indexing (background task polling chain)
-- [ ] Dashboard: Analytics pages (usage, events)
+- [ ] Console: Analytics pages (usage, events)
 - [ ] Org member invite flow (email invitation, includes Turnkey sub-org user creation)
 - [ ] Wallets service: `POST /internal/org-sub-org-user` endpoint (add user to org's Turnkey sub-org)
 - [ ] `RequireOrgRole` middleware enforcement on org-scoped routes (auth + registry)
@@ -1637,6 +1672,7 @@ PORT=8000
 # JWT signing (RS256 -- generate with: openssl genrsa -out private.pem 2048)
 JWT_PRIVATE_KEY_PEM=...
 JWT_PUBLIC_KEY_PEM=...
+AUTH_CODE_TTL_SECS=30
 RUST_LOG=info,auth=debug
 
 # ---- Wallets Service ----
@@ -1678,7 +1714,7 @@ API_GATEWAY_URL=https://api.evmauth.com
 GATEWAY_TIMEOUT_SECS=30
 EXCLUDE_SERVICES=gateway,db
 
-# ---- Frontend: Dashboard (ts/services/dashboard) ----
+# ---- Frontend: Console (ts/services/console) ----
 
 # Server-side only (not NEXT_PUBLIC_)
 BACKEND_URL=http://gateway:8000      # Internal gateway URL (never exposed to browser)
@@ -1697,9 +1733,8 @@ SESSION_SECRET=...                    # 32+ chars, required (no hardcoded fallba
 - The platform operator wallet is a Turnkey-managed wallet within the parent org. All signing goes through the Turnkey SDK via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/sign` endpoint. No raw private keys in any environment variable.
 - All contract addresses, tx hashes, and wallet addresses are stored as `TEXT` in Postgres (not `BYTEA`), EIP-55 checksummed format. Normalise on insert.
 - The `/auth/end-user/login` page must validate `redirect_uri` against `callback_urls` **before** initiating the OAuth flow -- never after -- to prevent open redirect attacks. Auth service calls registry internal API to validate.
-- Authorization codes in `auth.auth_codes` are stored as `SHA-256(plaintext_code)`. The plaintext is returned once in the redirect and never stored. On token exchange, hash the submitted code and look it up -- never store or log the plaintext code.
+- Authorization codes are stored as `SHA-256(plaintext_code)` in Redis with key `auth_code:{hash}` and configurable TTL (default 30s via `AUTH_CODE_TTL_SECS`). The plaintext is returned once in the redirect and never stored. On token exchange, hash the submitted code and look it up in Redis, then delete immediately -- never store or log the plaintext code.
 - The ERC-712 nonce is a Unix timestamp in seconds. Reject requests where `abs(now - nonce) > 30`. This is replay protection, not a monotonic counter.
-- Auth codes have a 60-second TTL. Run a periodic cleanup job (e.g., every 5 minutes via a Tokio background task) to delete expired unused codes.
 - The Turnkey delegated account policy must be set at org sub-org creation time and must restrict to `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` only. The wallets service owns this concern.
 - Session cookies must be: `HttpOnly`, `Secure`, `SameSite=Strict`.
 - The platform EVMAuth contract must be deployed and its address recorded in config before any org can be created. The registry service should verify `PLATFORM_CONTRACT_ADDRESS` is reachable on Radius at startup.

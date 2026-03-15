@@ -9,7 +9,7 @@ export interface SessionData {
 
 export const sessionOptions: SessionOptions = {
     password: config.sessionSecret,
-    cookieName: 'evmauth-dashboard',
+    cookieName: 'evmauth-console',
     cookieOptions: {
         secure: config.isProduction,
         httpOnly: true,

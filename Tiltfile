@@ -113,7 +113,10 @@ def generate_ts_service_yaml(service_name, config):
     lines.append("  {}:".format(service_name))
     lines.append("    build:")
     lines.append("      context: ../ts")
-    lines.append("      dockerfile: services/{}/Dockerfile.dev".format(config['name']))
+    lines.append("      dockerfile: Dockerfile")
+    lines.append("      target: dev")
+    lines.append("      args:")
+    lines.append("        SERVICE: {}".format(config['name']))
 
     lines.append("    volumes:")
     lines.append("      - ../ts:/workspace")
