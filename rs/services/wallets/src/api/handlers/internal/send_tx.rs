@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use types::{ChecksumAddress, TxHash};
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::repository::org_wallet::{OrgWalletRepository, OrgWalletRepositoryImpl};
@@ -43,12 +45,12 @@ pub struct SendTxRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SendTxResponse {
     /// The transaction hash
-    #[schema(example = "0xabc123...")]
-    pub tx_hash: String,
+    #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")]
+    pub tx_hash: TxHash,
 
     /// The deployed contract address (populated for contract creation)
-    #[schema(example = "0x1234567890abcdef1234567890abcdef12345678")]
-    pub contract_address: Option<String>,
+    #[schema(example = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")]
+    pub contract_address: Option<ChecksumAddress>,
 }
 
 /// Sign and broadcast a transaction via a delegated account
@@ -88,6 +90,7 @@ pub async fn send_tx(
 
     let from_address: Address = org_wallet
         .wallet_address
+        .as_str()
         .parse()
         .map_err(|e| ApiError::Internal(format!("invalid wallet address in database: {e}")))?;
 
@@ -164,7 +167,7 @@ pub async fn send_tx(
     let sign_result = state
         .turnkey
         .sign_raw_payload(
-            org_wallet.turnkey_sub_org_id,
+            org_wallet.turnkey_sub_org_id.into_inner(),
             state.turnkey.current_timestamp(),
             SignRawPayloadIntentV2 {
                 sign_with: delegated_user_id,
@@ -207,11 +210,15 @@ pub async fn send_tx(
         .await
         .map_err(|e| ApiError::Internal(format!("failed to broadcast transaction: {e}")))?;
 
-    let tx_hash = format!("{:#x}", pending.tx_hash());
+    let tx_hash = TxHash::new(&format!("{:#x}", pending.tx_hash()))
+        .map_err(|e| ApiError::Internal(format!("invalid tx hash: {e}")))?;
 
     // Step 8: Compute contract address for deployments
     let contract_address = if request.to.is_none() {
-        Some(format!("{:#x}", from_address.create(nonce)))
+        Some(
+            ChecksumAddress::new(&format!("{:#x}", from_address.create(nonce)))
+                .map_err(|e| ApiError::Internal(format!("invalid contract address: {e}")))?,
+        )
     } else {
         None
     };

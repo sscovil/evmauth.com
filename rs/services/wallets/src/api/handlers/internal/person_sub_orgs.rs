@@ -6,6 +6,8 @@ use turnkey_client::generated::immutable::activity::v1::{
 };
 use turnkey_client::generated::immutable::common::v1::ApiKeyCurve;
 
+use types::TurnkeySubOrgId;
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::request::CreatePersonTurnkeyRef;
@@ -92,10 +94,11 @@ pub async fn create_person_sub_org(
         )
         .await?;
 
+    let turnkey_sub_org_id = TurnkeySubOrgId::new(&result.result.sub_organization_id)
+        .map_err(|e| ApiError::Internal(format!("invalid sub-org ID from turnkey: {e}")))?;
+
     let repo = PersonTurnkeyRefRepositoryImpl::new(&state.db);
-    let ref_record = repo
-        .create(create.person_id, &result.result.sub_organization_id)
-        .await?;
+    let ref_record = repo.create(create.person_id, &turnkey_sub_org_id).await?;
 
     Ok((
         StatusCode::CREATED,

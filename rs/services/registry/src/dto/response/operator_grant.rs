@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use types::TxHash;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -13,11 +14,11 @@ pub struct OperatorGrantResponse {
     #[schema(example = "660e8400-e29b-41d4-a716-446655440000", format = "uuid")]
     pub contract_id: Uuid,
 
-    #[schema(example = "0xabc123...")]
-    pub grant_tx_hash: String,
+    #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")]
+    pub grant_tx_hash: TxHash,
 
-    #[schema(example = "0xdef456...")]
-    pub revoke_tx_hash: Option<String>,
+    #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")]
+    pub revoke_tx_hash: Option<TxHash>,
 
     pub active: bool,
 

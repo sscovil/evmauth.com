@@ -8,14 +8,19 @@ use uuid::Uuid;
 
 use turnkey_client::generated::immutable::activity::api::ApiKeyParams as SdkApiKeyParams;
 use turnkey_client::generated::immutable::activity::v1::{
-    ApiKeyParamsV2, CreateApiOnlyUsersIntent, CreateSubOrganizationIntentV7, CreateWalletIntent,
-    WalletAccountParams,
+    ApiKeyParamsV2, CreateApiOnlyUsersIntent, CreatePolicyIntentV3, CreateSubOrganizationIntentV7,
+    CreateWalletIntent, WalletAccountParams,
 };
 use turnkey_client::generated::immutable::common::v1::{
-    AddressFormat, ApiKeyCurve, Curve, PathFormat,
+    AddressFormat, ApiKeyCurve, Curve, Effect, PathFormat,
 };
 
+use types::{ChecksumAddress, TurnkeySubOrgId};
+
 use crate::AppState;
+
+/// BIP-32 derivation path for Ethereum accounts (EIP-44)
+const ETH_DERIVATION_PATH: &str = "m/44'/60'/0'/0/0";
 use crate::api::error::ApiError;
 use crate::dto::request::CreateOrgWallet;
 use crate::dto::response::OrgWalletResponse;
@@ -74,7 +79,7 @@ pub async fn create_org_wallet(
                 accounts: vec![WalletAccountParams {
                     curve: Curve::Secp256k1,
                     path_format: PathFormat::Bip32,
-                    path: "m/44'/60'/0'/0/0".to_string(),
+                    path: ETH_DERIVATION_PATH.to_string(),
                     address_format: AddressFormat::Ethereum,
                 }],
                 mnemonic_length: None,
@@ -82,12 +87,11 @@ pub async fn create_org_wallet(
         )
         .await?;
 
-    let wallet_address = wallet_result
-        .result
-        .addresses
-        .first()
-        .ok_or_else(|| ApiError::Internal("no wallet address returned from turnkey".to_string()))?
-        .clone();
+    let wallet_address =
+        ChecksumAddress::new(wallet_result.result.addresses.first().ok_or_else(|| {
+            ApiError::Internal("no wallet address returned from turnkey".to_string())
+        })?)
+        .map_err(|e| ApiError::Internal(format!("invalid wallet address from turnkey: {e}")))?;
 
     // Step 3: Optionally create a delegated account
     let delegated_user_id = match (create.delegated_user_name, create.delegated_api_public_key) {
@@ -114,17 +118,46 @@ pub async fn create_org_wallet(
                 )
                 .await?;
 
-            delegated_result.result.user_ids.into_iter().next()
+            let user_id = delegated_result.result.user_ids.into_iter().next();
+
+            // Step 3b: Create signing-only policy for the delegated account
+            if let Some(ref uid) = user_id {
+                let condition = format!(
+                    "turnkey.activity.type == '{}' && turnkey.activity.resource.userId == '{uid}'",
+                    "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2"
+                );
+
+                state
+                    .turnkey
+                    .create_policy(
+                        sub_org_id.clone(),
+                        state.turnkey.current_timestamp(),
+                        CreatePolicyIntentV3 {
+                            policy_name: format!("signing-only-{uid}"),
+                            effect: Effect::Allow,
+                            condition: Some(condition),
+                            consensus: None,
+                            notes: "restrict delegated account to sign_raw_payload only"
+                                .to_string(),
+                        },
+                    )
+                    .await?;
+            }
+
+            user_id
         }
         _ => None,
     };
 
     // Step 4: Store in database
+    let turnkey_sub_org_id = TurnkeySubOrgId::new(sub_org_id)
+        .map_err(|e| ApiError::Internal(format!("invalid sub-org ID from turnkey: {e}")))?;
+
     let repo = OrgWalletRepositoryImpl::new(&state.db);
     let org_wallet = repo
         .create(
             create.org_id,
-            sub_org_id,
+            &turnkey_sub_org_id,
             &wallet_address,
             delegated_user_id.as_deref(),
         )

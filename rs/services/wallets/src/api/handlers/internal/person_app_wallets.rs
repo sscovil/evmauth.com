@@ -11,7 +11,12 @@ use turnkey_client::generated::immutable::activity::v1::{
 };
 use turnkey_client::generated::immutable::common::v1::{AddressFormat, Curve, PathFormat};
 
+use types::ChecksumAddress;
+
 use crate::AppState;
+
+/// BIP-32 derivation path for Ethereum accounts (EIP-44)
+const ETH_DERIVATION_PATH: &str = "m/44'/60'/0'/0/0";
 use crate::api::error::ApiError;
 use crate::dto::request::CreatePersonAppWallet;
 use crate::dto::response::PersonAppWalletResponse;
@@ -58,14 +63,14 @@ pub async fn create_person_app_wallet(
     let account_result = state
         .turnkey
         .create_wallet_accounts(
-            turnkey_ref.turnkey_sub_org_id.clone(),
+            turnkey_ref.turnkey_sub_org_id.to_string(),
             state.turnkey.current_timestamp(),
             CreateWalletAccountsIntent {
                 wallet_id: format!("wallet-{}", turnkey_ref.turnkey_sub_org_id),
                 accounts: vec![WalletAccountParams {
                     curve: Curve::Secp256k1,
                     path_format: PathFormat::Bip32,
-                    path: "m/44'/60'/0'/0/0".to_string(),
+                    path: ETH_DERIVATION_PATH.to_string(),
                     address_format: AddressFormat::Ethereum,
                 }],
                 persist: None,
@@ -73,12 +78,13 @@ pub async fn create_person_app_wallet(
         )
         .await?;
 
-    let address = account_result
-        .result
-        .addresses
-        .first()
-        .ok_or_else(|| ApiError::Internal("no address returned from turnkey".to_string()))?
-        .clone();
+    let wallet_address =
+        ChecksumAddress::new(
+            account_result.result.addresses.first().ok_or_else(|| {
+                ApiError::Internal("no address returned from turnkey".to_string())
+            })?,
+        )
+        .map_err(|e| ApiError::Internal(format!("invalid wallet address from turnkey: {e}")))?;
 
     // Step 3: Store in database
     let wallet_repo = PersonAppWalletRepositoryImpl::new(&state.db);
@@ -86,7 +92,7 @@ pub async fn create_person_app_wallet(
         .create(
             create.person_id,
             create.app_registration_id,
-            &address,
+            &wallet_address,
             "", // account_id not returned by create_wallet_accounts
         )
         .await?;

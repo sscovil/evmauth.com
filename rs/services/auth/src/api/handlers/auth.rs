@@ -87,8 +87,7 @@ pub struct TokenResponse {
 /// Response from wallets service person sub-org creation
 #[derive(Debug, serde::Deserialize)]
 struct WalletsPersonSubOrgResponse {
-    #[serde(rename = "turnkey_sub_org_id")]
-    turnkey_sub_org_id: String,
+    turnkey_sub_org_id: types::TurnkeySubOrgId,
 }
 
 /// Deployer signup
@@ -195,7 +194,7 @@ pub async fn signup(
     // For passkey signup, auth_provider_ref is the Turnkey sub-org ID
     // For OAuth signup, use the provided auth_provider_ref
     let auth_provider_ref = if body.attestation.is_some() {
-        sub_org.turnkey_sub_org_id.clone()
+        sub_org.turnkey_sub_org_id.to_string()
     } else {
         body.auth_provider_ref
             .clone()

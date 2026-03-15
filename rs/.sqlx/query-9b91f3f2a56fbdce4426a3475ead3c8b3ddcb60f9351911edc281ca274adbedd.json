@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO registry.operator_grants (contract_id, grant_tx_hash)\n            VALUES ($1, $2)\n            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash, active, granted_at, revoked_at, created_at, updated_at\n            ",
+  "query": "\n            INSERT INTO registry.operator_grants (contract_id, grant_tx_hash)\n            VALUES ($1, $2)\n            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash as \"revoke_tx_hash: _\", active, granted_at, revoked_at, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
       },
       {
         "ordinal": 3,
-        "name": "revoke_tx_hash",
+        "name": "revoke_tx_hash: _",
         "type_info": "Text"
       },
       {
@@ -67,5 +67,5 @@
       false
     ]
   },
-  "hash": "e3a5fcb674597848fca05a956aa0d2c11fdd2d031e29e417179f33328ccba5e9"
+  "hash": "9b91f3f2a56fbdce4426a3475ead3c8b3ddcb60f9351911edc281ca274adbedd"
 }

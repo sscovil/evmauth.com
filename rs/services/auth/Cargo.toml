@@ -25,6 +25,9 @@ redis-client = { workspace = true }
 # Pagination
 pagination = { workspace = true }
 
+# Domain types
+types = { workspace = true }
+
 # EVM
 evm = { workspace = true }
 

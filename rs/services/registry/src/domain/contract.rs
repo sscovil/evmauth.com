@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::{ChecksumAddress, TxHash};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -9,10 +10,10 @@ pub struct Contract {
     pub org_id: Uuid,
     pub app_registration_id: Option<Uuid>,
     pub name: String,
-    pub address: String,
+    pub address: ChecksumAddress,
     pub chain_id: String,
-    pub beacon_address: String,
-    pub deploy_tx_hash: String,
+    pub beacon_address: ChecksumAddress,
+    pub deploy_tx_hash: TxHash,
     pub deployed_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

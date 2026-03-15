@@ -3,6 +3,8 @@ use axum::{
     extract::{Path, State},
 };
 
+use types::ClientId;
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::response::AppRegistrationResponse;
@@ -29,8 +31,11 @@ use crate::repository::app_registration::{
 )]
 pub async fn get_app_by_client_id(
     State(state): State<AppState>,
-    Path(client_id): Path<String>,
+    Path(client_id_str): Path<String>,
 ) -> Result<Json<AppRegistrationResponse>, ApiError> {
+    let client_id = ClientId::new(&client_id_str)
+        .map_err(|e| ApiError::BadRequest(format!("invalid client ID: {e}")))?;
+
     let repo = AppRegistrationRepositoryImpl::new(&state.db);
     let reg = repo
         .get_by_client_id(&client_id)

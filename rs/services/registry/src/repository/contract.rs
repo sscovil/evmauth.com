@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use pagination::Page;
 use sqlx::{PgPool, Postgres, QueryBuilder};
+use types::{ChecksumAddress, TxHash};
 use uuid::Uuid;
 
 use crate::domain::Contract;
@@ -11,10 +12,10 @@ pub struct CreateContractParams {
     pub org_id: Uuid,
     pub app_registration_id: Option<Uuid>,
     pub name: String,
-    pub address: String,
+    pub address: ChecksumAddress,
     pub chain_id: String,
-    pub beacon_address: String,
-    pub deploy_tx_hash: String,
+    pub beacon_address: ChecksumAddress,
+    pub deploy_tx_hash: TxHash,
 }
 
 #[async_trait]
@@ -23,7 +24,10 @@ pub trait ContractRepository: Send + Sync {
 
     async fn get(&self, id: Uuid) -> Result<Option<Contract>, RepositoryError>;
 
-    async fn get_by_address(&self, address: &str) -> Result<Option<Contract>, RepositoryError>;
+    async fn get_by_address(
+        &self,
+        address: &ChecksumAddress,
+    ) -> Result<Option<Contract>, RepositoryError>;
 
     async fn list_by_org_id(
         &self,
@@ -55,10 +59,10 @@ impl<'a> ContractRepository for ContractRepositoryImpl<'a> {
             params.org_id,
             params.app_registration_id,
             params.name,
-            params.address,
+            params.address.as_str(),
             params.chain_id,
-            params.beacon_address,
-            params.deploy_tx_hash,
+            params.beacon_address.as_str(),
+            params.deploy_tx_hash.as_str(),
         )
         .fetch_one(self.pool)
         .await
@@ -92,7 +96,10 @@ impl<'a> ContractRepository for ContractRepositoryImpl<'a> {
         Ok(contract)
     }
 
-    async fn get_by_address(&self, address: &str) -> Result<Option<Contract>, RepositoryError> {
+    async fn get_by_address(
+        &self,
+        address: &ChecksumAddress,
+    ) -> Result<Option<Contract>, RepositoryError> {
         let contract = sqlx::query_as!(
             Contract,
             r#"
@@ -100,7 +107,7 @@ impl<'a> ContractRepository for ContractRepositoryImpl<'a> {
             FROM registry.contracts
             WHERE address = $1
             "#,
-            address
+            address.as_str()
         )
         .fetch_optional(self.pool)
         .await?;

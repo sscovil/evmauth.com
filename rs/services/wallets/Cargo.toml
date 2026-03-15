@@ -48,6 +48,9 @@ uuid = { workspace = true }
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 
+# Domain types
+types = { workspace = true }
+
 # Blockchain
 evm = { workspace = true }
 alloy = { workspace = true }

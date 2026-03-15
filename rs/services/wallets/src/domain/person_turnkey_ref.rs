@@ -1,13 +1,14 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::TurnkeySubOrgId;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PersonTurnkeyRef {
     pub id: Uuid,
     pub person_id: Uuid,
-    pub turnkey_sub_org_id: String,
+    pub turnkey_sub_org_id: TurnkeySubOrgId,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

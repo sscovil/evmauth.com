@@ -969,6 +969,7 @@ dependencies = [
  "tokio",
  "tower-http",
  "tracing",
+ "types",
  "utoipa",
  "utoipa-axum",
  "uuid",
@@ -4473,6 +4474,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "types",
  "utoipa",
  "utoipa-axum",
  "uuid",
@@ -5931,6 +5933,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
+name = "types"
+version = "0.0.0"
+dependencies = [
+ "alloy",
+ "serde",
+ "sqlx",
+ "thiserror",
+ "utoipa",
+]
+
+[[package]]
 name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6136,6 +6149,7 @@ dependencies = [
  "tracing",
  "turnkey_api_key_stamper",
  "turnkey_client",
+ "types",
  "utoipa",
  "utoipa-axum",
  "uuid",

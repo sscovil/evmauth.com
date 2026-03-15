@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::ChecksumAddress;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -8,7 +9,7 @@ pub struct PersonAppWallet {
     pub id: Uuid,
     pub person_id: Uuid,
     pub app_registration_id: Uuid,
-    pub wallet_address: String,
+    pub wallet_address: ChecksumAddress,
     pub turnkey_account_id: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

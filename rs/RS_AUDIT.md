@@ -34,8 +34,8 @@ propagate the error with `?` or handle it explicitly.
 
 ### 1.2 Error types are specific and carry context
 
-- Each crate must define its own error enum using `thiserror::Error`.
-- Variants must not be named `Error(String)` or `Other(String)` — these
+- Each crate/service must define its own error enum using `thiserror::Error`.
+- Variants must not be named `Error(String)` or `Other(String)` -- these
   destroy structural information. Flag any such variants.
 - `#[from]` conversions must be used for wrapping foreign errors rather than
   manual `map_err(|e| MyError::Something(e.to_string()))`. The latter
@@ -48,9 +48,10 @@ propagate the error with `?` or handle it explicitly.
 
 `anyhow::Error` is appropriate in `main.rs` and in handler functions where
 multiple unrelated error types converge and the caller only needs to log or
-return a 500. It must not appear in library crate public APIs (`crates/core`,
-`crates/db`, `crates/turnkey`, `crates/chain`). Flag any `anyhow::Result` or
-`anyhow::Error` in the public API surface of those crates.
+return a 500. It must not appear in library crate public APIs (`crates/evm`,
+`crates/postgres`, `crates/redis-client`, `crates/pagination`,
+`crates/service-discovery`). Flag any `anyhow::Result` or `anyhow::Error` in
+the public API surface of those crates.
 
 ### 1.4 The `?` operator is used consistently
 
@@ -136,23 +137,23 @@ bare `String` or `Uuid` where a domain type should be used instead.
 
 ### 3.3 Crate boundaries are respected
 
-The dependency graph must be:
+The architecture is microservices with shared library crates:
 
 ```
-api → core, db, turnkey, chain
-core → (nothing internal)
-db → core
-turnkey → core
-chain → core
+services/auth      -> crates/evm, crates/postgres, crates/redis-client, crates/pagination
+services/wallets   -> crates/evm, crates/postgres, crates/redis-client, turnkey_client SDK
+services/registry  -> crates/evm, crates/postgres, crates/redis-client, crates/pagination
+services/gateway   -> crates/service-discovery
+services/docs      -> crates/service-discovery
+services/assets    -> crates/postgres, crates/redis-client, crates/pagination
 ```
 
-- `api` crates must not contain domain logic — only routing, extraction,
+- Service handlers must not contain domain logic -- only routing, extraction,
   response mapping, and middleware.
-- `core` must have zero I/O dependencies (`sqlx`, `reqwest`, `alloy` provider
-  calls). It may use `alloy` types (addresses, hashes) but must not make
-  network calls.
-- `db` must not import from `turnkey` or `chain`.
-- `turnkey` must not import from `db` or `chain`.
+- Library crates (`crates/*`) must have no knowledge of specific services.
+- The `evm` crate must not make network calls that mutate state (it is
+  read-only). It may use `alloy` types and read-only provider calls.
+- Only the wallets service talks to the Turnkey SDK.
 
 Flag any `use` statement that violates this graph.
 
@@ -186,6 +187,7 @@ comparison of:
 - HMAC values
 - Hash digests (e.g. auth code hashes)
 - API key hashes
+- Authentication credential references
 
 must use a constant-time comparison function (e.g. `subtle::ConstantTimeEq`
 or `ring`'s comparison utilities). Flag every `==` comparison where either
@@ -194,7 +196,7 @@ operand is a hash, digest, or encoded secret.
 ### 4.3 EIP-55 normalization on input
 
 All wallet addresses received from external input (request bodies, query
-parameters, Turnkey API responses) must be normalized to EIP-55 checksum
+parameters, Turnkey SDK responses) must be normalized to EIP-55 checksum
 format before storage or comparison. Flag any address stored or compared
 without explicit checksum normalization.
 
@@ -225,12 +227,12 @@ logging operation.
 - `sqlx::PgPool` must be created once at startup and passed via `AppState`.
   Flag any code that creates a new pool per request or per connection.
 - Long-running transactions must not hold a connection while awaiting an
-  external I/O operation (Turnkey API call, chain RPC call). Flag any
+  external I/O operation (Turnkey SDK call, chain RPC call). Flag any
   `sqlx::Transaction` that is held open across a `reqwest` or `alloy` await.
 
 ### 5.2 HTTP clients are not recreated per request
 
-`reqwest::Client` is designed to be cloned and reused — it maintains a
+`reqwest::Client` is designed to be cloned and reused -- it maintains a
 connection pool internally. Flag any code that calls `reqwest::Client::new()`
 inside a request handler or in a loop.
 
@@ -244,8 +246,13 @@ The `/accounts` endpoint is the performance-critical path. Flag:
 
 ### 5.4 Retry logic has backoff and a limit
 
-Turnkey API calls must retry with exponential backoff. Flag any retry loop
-that:
+The wallets service uses the official Turnkey Rust SDK (`turnkey_client`),
+which handles retry logic internally via `RetryConfig` with exponential
+backoff (default: 5 attempts, 500ms initial delay, 2x multiplier, 5s max
+delay). Do not add custom retry wrappers around SDK calls.
+
+For non-SDK external calls (e.g., inter-service HTTP via `reqwest`), flag
+any retry loop that:
 - Has no maximum attempt count
 - Has no delay between attempts
 - Does not distinguish retryable errors (network timeout, 503) from
@@ -257,10 +264,11 @@ that:
 
 ### 6.1 Public items are documented
 
-Every `pub` function, struct, and enum in `crates/core`, `crates/db`,
-`crates/turnkey`, and `crates/chain` must have a `///` doc comment explaining
-what it does, not merely restating its name. Flag undocumented public items
-in these crates.
+Every `pub` function, struct, and enum in `crates/evm`,
+`crates/postgres`, `crates/redis-client`, `crates/pagination`, and
+`crates/service-discovery` must have a `///` doc comment explaining what it
+does, not merely restating its name. Flag undocumented public items in these
+crates.
 
 ### 6.2 `todo!()` and `unimplemented!()` are absent
 
@@ -275,10 +283,11 @@ unless accompanied by a comment explaining why it is retained.
 
 Flag any numeric literal or string literal used directly in logic (not in
 tests) that represents a domain concept without a named constant. Examples:
-- `30` for the ERC-712 replay window in seconds → must be
+- `30` for the ERC-712 replay window in seconds -> must be
   `const ERC712_REPLAY_WINDOW_SECS: u64 = 30`
-- `60` for auth code TTL → `const AUTH_CODE_TTL_SECS: u64 = 60`
+- `60` for auth code TTL -> `const AUTH_CODE_TTL_SECS: u64 = 60`
 - Token ID values for platform capability tokens
+- HD wallet derivation paths
 
 ### 6.5 Clippy passes cleanly
 
@@ -292,50 +301,49 @@ warnings. Flag any pattern that Clippy would warn on, including:
 
 ---
 
-## Section 7: Turnkey Client Crate Specifically
+## Section 7: Turnkey SDK Integration
 
-The `crates/turnkey` crate wraps the official `turnkey_client` Rust SDK. It
-deserves extra scrutiny because it is the trust boundary between the platform
-and the TEE.
+The wallets service uses the official `turnkey_client` Rust SDK (v0.6) and
+`turnkey_api_key_stamper` for P-256 request signing. There is no custom
+Turnkey wrapper crate -- the SDK is used directly by the wallets service
+handlers.
 
-### 7.1 Typed SDK responses are not re-wrapped in generic types
+### 7.1 SDK typed intents and results are used
 
-The `turnkey_client` SDK returns concrete typed results (e.g.
-`CreateSubOrganizationResult`). These must flow through the crate as their
-concrete types, not be deserialized to `serde_json::Value` or re-wrapped in
-`HashMap<String, String>`. Flag any intermediate JSON deserialization of
-Turnkey SDK responses.
+The SDK provides typed intent structs (e.g., `CreateSubOrganizationIntentV7`,
+`CreateWalletIntent`, `SignRawPayloadIntentV2`) and typed result structs
+(e.g., `ActivityResult<CreateWalletResult>`). Flag any code that constructs
+raw JSON requests to the Turnkey API or deserializes responses via
+`serde_json::Value` instead of using the SDK's typed methods.
 
-### 7.2 Activity type strings are not hardcoded
+### 7.2 SDK methods are used for all Turnkey operations
 
-The SDK provides typed methods (e.g. `client.create_sub_organization(...)`)
-that handle the `ACTIVITY_TYPE_*` string internally. Flag any code that
-constructs a raw Turnkey activity request by manually setting a `type` field
-as a string.
+The SDK provides typed methods (e.g., `client.create_sub_organization(...)`,
+`client.create_wallet(...)`, `client.sign_raw_payload(...)`) that handle
+activity type strings, request stamping, and response parsing internally.
+Flag any code that constructs raw Turnkey activity requests by manually
+setting a `type` field as a string, or that bypasses the SDK to call the
+Turnkey API directly via `reqwest`.
 
 ### 7.3 The delegated account policy is verified at provisioning
 
 When creating an org sub-org and provisioning the delegated account, the code
-must verify that the policy restricting the delegated account to
-`ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` was successfully applied before returning
-success. Flag any provisioning flow that creates the delegated account user
-without asserting the policy is in place.
+must create a Turnkey policy restricting the delegated account to
+`ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` only, and verify the policy was
+successfully applied before returning success. Flag any provisioning flow
+that creates the delegated account user without creating and asserting the
+signing-only policy is in place. Use the SDK's `create_policy` method.
 
-### 7.4 Turnkey errors are mapped to domain errors
+### 7.4 SDK errors are handled, not swallowed
 
-Turnkey API errors must be caught and mapped to specific `TurnkeyError`
-variants, not propagated as opaque HTTP errors. At minimum, distinguish:
-- Authentication failure (bad stamp, invalid API key)
-- Policy denial (activity denied by policy engine)
-- Resource not found (sub-org, user, wallet does not exist)
-- Rate limit / transient error (retryable)
-
-Flag any Turnkey error path that maps everything to a single
-`TurnkeyError::Api(String)` variant.
+`TurnkeyClientError` has structured variants (`ActivityFailed`,
+`ExceededRetries`, `StamperError`, `UnexpectedHttpStatus`, etc.). These must
+be propagated or mapped to appropriate API errors. Flag any error path that
+discards the SDK error or maps everything to a single opaque string.
 
 ---
 
-## Section 8: Chain Crate Specifically
+## Section 8: EVM Crate Specifically
 
 ### 8.1 All addresses are validated before use
 
@@ -349,12 +357,13 @@ Every `alloy` provider call must have an explicit timeout. An RPC node that
 stops responding must not hang the request indefinitely. Flag any provider
 call without a configured timeout.
 
-### 8.3 The Signer trait is used, not a concrete key type
+### 8.3 The EVM crate is read-only
 
-All signing in `crates/chain` must go through a `Signer` trait rather than a
-concrete key type. This ensures the Turnkey wallet can replace a local signer
-without changing call sites. Flag any direct use of a concrete signing key
-type (e.g. `LocalSigner`, `PrivateKeySigner`) outside of test fixtures.
+The `crates/evm` crate provides read-only contract queries and ABI encoding.
+It must not contain signing logic or mutable state operations. All signing
+goes through the Turnkey SDK in the wallets service. Flag any signing key
+types (`LocalSigner`, `PrivateKeySigner`) or transaction-sending logic in
+the evm crate.
 
 ---
 
@@ -363,25 +372,25 @@ type (e.g. `LocalSigner`, `PrivateKeySigner`) outside of test fixtures.
 Apply this audit to the full backend workspace:
 
 ```
-cd backend
+cd rs
 cargo clippy -- -D warnings          # must produce zero warnings
 cargo test --workspace               # all tests must pass
 cargo audit                          # no known vulnerabilities
 ```
 
 Then work through each section above file by file, starting with:
-1. `crates/turnkey/src/` — highest trust sensitivity
-2. `crates/api/src/middleware/` — auth boundary
-3. `crates/api/src/handlers/accounts.rs` — hot path
-4. `crates/chain/src/` — external I/O
-5. `crates/db/src/` — persistence
-6. `crates/core/src/` — domain types
-7. `crates/api/src/` — remainder
+1. `services/wallets/src/` -- Turnkey trust boundary + signing
+2. `services/auth/src/` -- authentication boundary
+3. `services/registry/src/` -- contract management + accounts query
+4. `crates/evm/src/` -- external I/O (chain RPC)
+5. `crates/postgres/src/`, `crates/redis-client/src/` -- persistence
+6. `crates/pagination/src/`, `crates/service-discovery/src/` -- shared libs
+7. `services/gateway/src/`, `services/assets/src/`, `services/docs/src/`
 
 Produce findings in this format:
 
 ```
-[CRITICAL|MAJOR|MINOR] crates/<crate>/src/<file>.rs:<line>
+[CRITICAL|MAJOR|MINOR] services/<service>/src/<file>.rs:<line>
 Problem: <one sentence>
 Current:
     <offending code>

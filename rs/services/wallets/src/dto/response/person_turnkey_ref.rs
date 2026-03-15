@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::TurnkeySubOrgId;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,7 +19,7 @@ pub struct PersonTurnkeyRefResponse {
 
     /// The Turnkey sub-organization ID
     #[schema(example = "sub_org_abc123", format = "string")]
-    pub turnkey_sub_org_id: String,
+    pub turnkey_sub_org_id: TurnkeySubOrgId,
 
     /// Timestamp when the record was created
     #[schema(example = "2024-01-15T10:30:00Z", format = "date-time")]

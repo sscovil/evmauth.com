@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
+use types::{ChecksumAddress, TurnkeySubOrgId};
 use uuid::Uuid;
 
 use crate::domain::OrgWallet;
@@ -11,8 +12,8 @@ pub trait OrgWalletRepository: Send + Sync {
     async fn create(
         &self,
         org_id: Uuid,
-        turnkey_sub_org_id: &str,
-        wallet_address: &str,
+        turnkey_sub_org_id: &TurnkeySubOrgId,
+        wallet_address: &ChecksumAddress,
         turnkey_delegated_user_id: Option<&str>,
     ) -> Result<OrgWallet, RepositoryError>;
     async fn get(&self, id: Uuid) -> Result<Option<OrgWallet>, RepositoryError>;
@@ -35,8 +36,8 @@ impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
     async fn create(
         &self,
         org_id: Uuid,
-        turnkey_sub_org_id: &str,
-        wallet_address: &str,
+        turnkey_sub_org_id: &TurnkeySubOrgId,
+        wallet_address: &ChecksumAddress,
         turnkey_delegated_user_id: Option<&str>,
     ) -> Result<OrgWallet, RepositoryError> {
         let result = sqlx::query_as!(
@@ -47,8 +48,8 @@ impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
             RETURNING id, org_id, turnkey_sub_org_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
             "#,
             org_id,
-            turnkey_sub_org_id,
-            wallet_address,
+            turnkey_sub_org_id.as_str(),
+            wallet_address.as_str(),
             turnkey_delegated_user_id
         )
         .fetch_one(self.pool)

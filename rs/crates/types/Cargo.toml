@@ -1,0 +1,12 @@
+[package]
+name = "types"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+alloy = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+utoipa = { workspace = true }

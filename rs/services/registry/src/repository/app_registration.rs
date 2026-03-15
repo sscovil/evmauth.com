@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use pagination::Page;
 use sqlx::{PgPool, Postgres, QueryBuilder};
+use types::ClientId;
 use uuid::Uuid;
 
 use crate::domain::AppRegistration;
@@ -9,11 +10,13 @@ use crate::domain::AppRegistration;
 use super::error::RepositoryError;
 
 /// Generate a random 22-character base64url client ID (128 bits of entropy)
-fn generate_client_id() -> Result<String, RepositoryError> {
+fn generate_client_id() -> Result<ClientId, RepositoryError> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes)
         .map_err(|e| RepositoryError::Internal(format!("failed to generate random bytes: {e}")))?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
+    let encoded = URL_SAFE_NO_PAD.encode(bytes);
+    ClientId::new(&encoded)
+        .map_err(|e| RepositoryError::Internal(format!("failed to create client ID: {e}")))
 }
 
 #[async_trait]
@@ -30,7 +33,7 @@ pub trait AppRegistrationRepository: Send + Sync {
 
     async fn get_by_client_id(
         &self,
-        client_id: &str,
+        client_id: &ClientId,
     ) -> Result<Option<AppRegistration>, RepositoryError>;
 
     async fn list_by_org_id(
@@ -80,7 +83,7 @@ impl<'a> AppRegistrationRepository for AppRegistrationRepositoryImpl<'a> {
             "#,
             org_id,
             name,
-            client_id,
+            client_id.as_str(),
             callback_urls,
             relevant_token_ids,
         )
@@ -118,7 +121,7 @@ impl<'a> AppRegistrationRepository for AppRegistrationRepositoryImpl<'a> {
 
     async fn get_by_client_id(
         &self,
-        client_id: &str,
+        client_id: &ClientId,
     ) -> Result<Option<AppRegistration>, RepositoryError> {
         let reg = sqlx::query_as!(
             AppRegistration,
@@ -127,7 +130,7 @@ impl<'a> AppRegistrationRepository for AppRegistrationRepositoryImpl<'a> {
             FROM registry.app_registrations
             WHERE client_id = $1
             "#,
-            client_id
+            client_id.as_str()
         )
         .fetch_optional(self.pool)
         .await?;

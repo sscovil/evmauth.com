@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 const WALLETS_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 
+use types::ChecksumAddress;
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::request::CreateContract;
@@ -35,6 +37,30 @@ struct SendTxRequest {
     org_id: Uuid,
     to: Option<String>,
     calldata: String,
+}
+
+/// Send a transaction via the wallets service with a timeout.
+async fn send_tx_via_wallets(
+    state: &AppState,
+    request: &SendTxRequest,
+) -> Result<SendTxResponse, ApiError> {
+    let wallets_url = &state.config.wallets_service_url;
+    tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .post(format!("{wallets_url}/internal/send-tx"))
+            .json(request)
+            .send()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
+            .error_for_status()
+            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
+            .json()
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
+    })
+    .await
+    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))?
 }
 
 #[utoipa::path(
@@ -88,26 +114,15 @@ pub async fn deploy_contract(
     let calldata_hex = format!("0x{}", alloy::hex::encode(&deploy_bytecode));
 
     // Step 3: Send deployment transaction via wallets service
-    let send_tx_response: SendTxResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
-        state
-            .http_client
-            .post(format!("{wallets_url}/internal/send-tx"))
-            .json(&SendTxRequest {
-                org_id,
-                to: None,
-                calldata: calldata_hex,
-            })
-            .send()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
-            .error_for_status()
-            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
-    })
-    .await
-    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
+    let send_tx_response = send_tx_via_wallets(
+        &state,
+        &SendTxRequest {
+            org_id,
+            to: None,
+            calldata: calldata_hex,
+        },
+    )
+    .await?;
 
     let contract_address = send_tx_response.contract_address.ok_or_else(|| {
         ApiError::Internal("no contract address returned from deployment".to_string())
@@ -116,6 +131,8 @@ pub async fn deploy_contract(
     // Step 4: Insert contract record
     let repo = ContractRepositoryImpl::new(&state.db);
     let chain_id = state.evm.config().chain_id.to_string();
+    let beacon_checksum = ChecksumAddress::new(&format!("{:#x}", beacon_address))
+        .map_err(|e| ApiError::Internal(format!("invalid beacon address: {e}")))?;
 
     let contract = repo
         .create(CreateContractParams {
@@ -124,7 +141,7 @@ pub async fn deploy_contract(
             name: body.name,
             address: contract_address,
             chain_id,
-            beacon_address: format!("{:#x}", beacon_address),
+            beacon_address: beacon_checksum,
             deploy_tx_hash: send_tx_response.tx_hash,
         })
         .await?;
@@ -234,27 +251,15 @@ pub async fn grant_operator(
     let calldata_hex = format!("0x{}", alloy::hex::encode(&calldata));
 
     // Send transaction via wallets service
-    let wallets_url = &state.config.wallets_service_url;
-    let send_tx_response: SendTxResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
-        state
-            .http_client
-            .post(format!("{wallets_url}/internal/send-tx"))
-            .json(&SendTxRequest {
-                org_id,
-                to: Some(contract.address),
-                calldata: calldata_hex,
-            })
-            .send()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
-            .error_for_status()
-            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
-    })
-    .await
-    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
+    let send_tx_response = send_tx_via_wallets(
+        &state,
+        &SendTxRequest {
+            org_id,
+            to: Some(contract.address.to_string()),
+            calldata: calldata_hex,
+        },
+    )
+    .await?;
 
     // Record the grant
     let grant = grant_repo
@@ -314,27 +319,15 @@ pub async fn revoke_operator(
     let calldata_hex = format!("0x{}", alloy::hex::encode(&calldata));
 
     // Send transaction via wallets service
-    let wallets_url = &state.config.wallets_service_url;
-    let send_tx_response: SendTxResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
-        state
-            .http_client
-            .post(format!("{wallets_url}/internal/send-tx"))
-            .json(&SendTxRequest {
-                org_id,
-                to: Some(contract.address),
-                calldata: calldata_hex,
-            })
-            .send()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
-            .error_for_status()
-            .map_err(|e| ApiError::Internal(format!("transaction broadcast failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to parse send-tx response: {e}")))
-    })
-    .await
-    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
+    let send_tx_response = send_tx_via_wallets(
+        &state,
+        &SendTxRequest {
+            org_id,
+            to: Some(contract.address.to_string()),
+            calldata: calldata_hex,
+        },
+    )
+    .await?;
 
     // Update the grant record
     let revoked = grant_repo

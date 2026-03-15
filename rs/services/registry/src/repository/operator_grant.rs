@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
+use types::TxHash;
 use uuid::Uuid;
 
 use crate::domain::OperatorGrant;
@@ -11,7 +12,7 @@ pub trait OperatorGrantRepository: Send + Sync {
     async fn create(
         &self,
         contract_id: Uuid,
-        grant_tx_hash: &str,
+        grant_tx_hash: &TxHash,
     ) -> Result<OperatorGrant, RepositoryError>;
 
     async fn get_by_contract_id(
@@ -22,7 +23,7 @@ pub trait OperatorGrantRepository: Send + Sync {
     async fn revoke(
         &self,
         id: Uuid,
-        revoke_tx_hash: &str,
+        revoke_tx_hash: &TxHash,
     ) -> Result<OperatorGrant, RepositoryError>;
 }
 
@@ -41,17 +42,17 @@ impl<'a> OperatorGrantRepository for OperatorGrantRepositoryImpl<'a> {
     async fn create(
         &self,
         contract_id: Uuid,
-        grant_tx_hash: &str,
+        grant_tx_hash: &TxHash,
     ) -> Result<OperatorGrant, RepositoryError> {
         let result = sqlx::query_as!(
             OperatorGrant,
             r#"
             INSERT INTO registry.operator_grants (contract_id, grant_tx_hash)
             VALUES ($1, $2)
-            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash, active, granted_at, revoked_at, created_at, updated_at
+            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash as "revoke_tx_hash: _", active, granted_at, revoked_at, created_at, updated_at
             "#,
             contract_id,
-            grant_tx_hash,
+            grant_tx_hash.as_str(),
         )
         .fetch_one(self.pool)
         .await?;
@@ -66,7 +67,7 @@ impl<'a> OperatorGrantRepository for OperatorGrantRepositoryImpl<'a> {
         let grant = sqlx::query_as!(
             OperatorGrant,
             r#"
-            SELECT id, contract_id, grant_tx_hash, revoke_tx_hash, active, granted_at, revoked_at, created_at, updated_at
+            SELECT id, contract_id, grant_tx_hash, revoke_tx_hash as "revoke_tx_hash: _", active, granted_at, revoked_at, created_at, updated_at
             FROM registry.operator_grants
             WHERE contract_id = $1 AND active = true
             ORDER BY created_at DESC
@@ -83,7 +84,7 @@ impl<'a> OperatorGrantRepository for OperatorGrantRepositoryImpl<'a> {
     async fn revoke(
         &self,
         id: Uuid,
-        revoke_tx_hash: &str,
+        revoke_tx_hash: &TxHash,
     ) -> Result<OperatorGrant, RepositoryError> {
         let result = sqlx::query_as!(
             OperatorGrant,
@@ -91,10 +92,10 @@ impl<'a> OperatorGrantRepository for OperatorGrantRepositoryImpl<'a> {
             UPDATE registry.operator_grants
             SET active = false, revoke_tx_hash = $2, revoked_at = now()
             WHERE id = $1
-            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash, active, granted_at, revoked_at, created_at, updated_at
+            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash as "revoke_tx_hash: _", active, granted_at, revoked_at, created_at, updated_at
             "#,
             id,
-            revoke_tx_hash,
+            revoke_tx_hash.as_str(),
         )
         .fetch_optional(self.pool)
         .await?

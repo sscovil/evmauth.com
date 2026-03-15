@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::{ChecksumAddress, TxHash};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -20,17 +21,17 @@ pub struct ContractResponse {
     #[schema(example = "My Token Contract")]
     pub name: String,
 
-    #[schema(example = "0x1234567890abcdef1234567890abcdef12345678")]
-    pub address: String,
+    #[schema(example = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")]
+    pub address: ChecksumAddress,
 
     #[schema(example = "421614")]
     pub chain_id: String,
 
-    #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef12")]
-    pub beacon_address: String,
+    #[schema(example = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")]
+    pub beacon_address: ChecksumAddress,
 
-    #[schema(example = "0xdeadbeef...")]
-    pub deploy_tx_hash: String,
+    #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")]
+    pub deploy_tx_hash: TxHash,
 
     #[schema(example = "2024-01-15T10:30:00Z", format = "date-time")]
     pub deployed_at: DateTime<Utc>,

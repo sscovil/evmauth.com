@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
+use types::ChecksumAddress;
 use uuid::Uuid;
 
 use crate::domain::PersonAppWallet;
@@ -12,7 +13,7 @@ pub trait PersonAppWalletRepository: Send + Sync {
         &self,
         person_id: Uuid,
         app_registration_id: Uuid,
-        wallet_address: &str,
+        wallet_address: &ChecksumAddress,
         turnkey_account_id: &str,
     ) -> Result<PersonAppWallet, RepositoryError>;
     async fn get(&self, id: Uuid) -> Result<Option<PersonAppWallet>, RepositoryError>;
@@ -44,7 +45,7 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
         &self,
         person_id: Uuid,
         app_registration_id: Uuid,
-        wallet_address: &str,
+        wallet_address: &ChecksumAddress,
         turnkey_account_id: &str,
     ) -> Result<PersonAppWallet, RepositoryError> {
         let result = sqlx::query_as!(
@@ -56,7 +57,7 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
             "#,
             person_id,
             app_registration_id,
-            wallet_address,
+            wallet_address.as_str(),
             turnkey_account_id
         )
         .fetch_one(self.pool)

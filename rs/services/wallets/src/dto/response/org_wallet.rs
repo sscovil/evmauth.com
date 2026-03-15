@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::{ChecksumAddress, TurnkeySubOrgId};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,14 +19,14 @@ pub struct OrgWalletResponse {
 
     /// The Turnkey sub-organization ID
     #[schema(example = "sub_org_abc123", format = "string")]
-    pub turnkey_sub_org_id: String,
+    pub turnkey_sub_org_id: TurnkeySubOrgId,
 
     /// The Ethereum wallet address
     #[schema(
-        example = "0x1234567890abcdef1234567890abcdef12345678",
+        example = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
         format = "string"
     )]
-    pub wallet_address: String,
+    pub wallet_address: ChecksumAddress,
 
     /// The Turnkey delegated user ID (if configured)
     #[schema(example = "usr_delegated_123", format = "string")]

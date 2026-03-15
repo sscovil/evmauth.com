@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
+use types::ClientId;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,7 +19,7 @@ pub struct AppRegistrationResponse {
     pub name: String,
 
     #[schema(example = "aBcDeFgHiJkLmNoPqRsT01")]
-    pub client_id: String,
+    pub client_id: ClientId,
 
     #[schema(example = json!(["https://example.com/callback"]))]
     pub callback_urls: Vec<String>,

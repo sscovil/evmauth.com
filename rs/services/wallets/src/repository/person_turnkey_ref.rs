@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
+use types::TurnkeySubOrgId;
 use uuid::Uuid;
 
 use crate::domain::PersonTurnkeyRef;
@@ -11,7 +12,7 @@ pub trait PersonTurnkeyRefRepository: Send + Sync {
     async fn create(
         &self,
         person_id: Uuid,
-        turnkey_sub_org_id: &str,
+        turnkey_sub_org_id: &TurnkeySubOrgId,
     ) -> Result<PersonTurnkeyRef, RepositoryError>;
     async fn get(&self, id: Uuid) -> Result<Option<PersonTurnkeyRef>, RepositoryError>;
     async fn get_by_person_id(
@@ -36,7 +37,7 @@ impl<'a> PersonTurnkeyRefRepository for PersonTurnkeyRefRepositoryImpl<'a> {
     async fn create(
         &self,
         person_id: Uuid,
-        turnkey_sub_org_id: &str,
+        turnkey_sub_org_id: &TurnkeySubOrgId,
     ) -> Result<PersonTurnkeyRef, RepositoryError> {
         let result = sqlx::query_as!(
             PersonTurnkeyRef,
@@ -46,7 +47,7 @@ impl<'a> PersonTurnkeyRefRepository for PersonTurnkeyRefRepositoryImpl<'a> {
             RETURNING id, person_id, turnkey_sub_org_id, created_at, updated_at
             "#,
             person_id,
-            turnkey_sub_org_id
+            turnkey_sub_org_id.as_str()
         )
         .fetch_one(self.pool)
         .await

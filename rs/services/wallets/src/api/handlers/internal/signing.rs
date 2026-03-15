@@ -98,7 +98,7 @@ pub async fn sign_payload(
     let result = state
         .turnkey
         .sign_raw_payload(
-            org_wallet.turnkey_sub_org_id,
+            org_wallet.turnkey_sub_org_id.into_inner(),
             state.turnkey.current_timestamp(),
             SignRawPayloadIntentV2 {
                 sign_with: delegated_user_id,
