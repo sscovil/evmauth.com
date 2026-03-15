@@ -33,6 +33,7 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
         throw new Error(getErrorMessage(errorBody, `HTTP ${response.status}`));
     }
 
+    // Trusted type assertion: callers provide T matching the expected backend response shape
     return response.json() as Promise<T>;
 }
 
