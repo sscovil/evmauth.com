@@ -17,7 +17,7 @@ pub enum ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            ApiError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
+            ApiError::NotFound => (StatusCode::NOT_FOUND, "resource not found".to_string()),
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
@@ -35,18 +35,18 @@ impl From<RepositoryError> for ApiError {
         match err {
             RepositoryError::NotFound => ApiError::NotFound,
             RepositoryError::InvalidCursor(msg) => {
-                ApiError::BadRequest(format!("Invalid cursor: {msg}"))
+                ApiError::BadRequest(format!("invalid cursor: {msg}"))
             }
             RepositoryError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);
-                ApiError::Internal("Database error".to_string())
+                ApiError::Internal("database error".to_string())
             }
             RepositoryError::ConstraintViolation(msg) => {
-                ApiError::BadRequest(format!("Constraint violation: {msg}"))
+                ApiError::BadRequest(format!("constraint violation: {msg}"))
             }
             RepositoryError::Internal(msg) => {
-                tracing::error!("Internal error: {msg}");
-                ApiError::Internal("Internal error".to_string())
+                tracing::error!("internal error: {msg}");
+                ApiError::Internal("internal error".to_string())
             }
         }
     }
@@ -56,10 +56,10 @@ impl From<pagination::PaginationError> for ApiError {
     fn from(err: pagination::PaginationError) -> Self {
         match err {
             pagination::PaginationError::InvalidCursor(msg) => {
-                ApiError::BadRequest(format!("Invalid cursor: {msg}"))
+                ApiError::BadRequest(format!("invalid cursor: {msg}"))
             }
             pagination::PaginationError::InvalidParameters(msg) => {
-                ApiError::BadRequest(format!("Invalid pagination parameters: {msg}"))
+                ApiError::BadRequest(format!("invalid pagination parameters: {msg}"))
             }
         }
     }

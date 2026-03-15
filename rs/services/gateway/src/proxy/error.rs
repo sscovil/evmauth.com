@@ -7,16 +7,16 @@ use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProxyError {
-    #[error("Service '{0}' not found")]
+    #[error("service '{0}' not found")]
     ServiceNotFound(String),
 
-    #[error("Request failed: {0}")]
+    #[error("request failed: {0}")]
     RequestFailed(#[from] reqwest::Error),
 
-    #[error("Invalid path")]
+    #[error("invalid path")]
     InvalidPath,
 
-    #[error("Bad gateway: {0}")]
+    #[error("bad gateway: {0}")]
     BadGateway(String),
 }
 

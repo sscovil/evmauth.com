@@ -5,10 +5,10 @@ use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum JwtError {
-    #[error("Failed to create JWT: {0}")]
+    #[error("failed to create jwt: {0}")]
     Creation(#[from] jsonwebtoken::errors::Error),
 
-    #[error("Invalid key: {0}")]
+    #[error("invalid key: {0}")]
     InvalidKey(String),
 }
 
@@ -23,9 +23,9 @@ impl JwtKeys {
     /// Create JwtKeys from PEM-encoded RSA private and public keys
     pub fn from_pem(private_pem: &[u8], public_pem: &[u8]) -> Result<Self, JwtError> {
         let encoding = EncodingKey::from_rsa_pem(private_pem)
-            .map_err(|e| JwtError::InvalidKey(format!("Invalid private key: {e}")))?;
+            .map_err(|e| JwtError::InvalidKey(format!("invalid private key: {e}")))?;
         let decoding = DecodingKey::from_rsa_pem(public_pem)
-            .map_err(|e| JwtError::InvalidKey(format!("Invalid public key: {e}")))?;
+            .map_err(|e| JwtError::InvalidKey(format!("invalid public key: {e}")))?;
 
         Ok(Self { encoding, decoding })
     }

@@ -3,6 +3,8 @@ use std::env;
 // Re-export from service-discovery crate
 pub use service_discovery::ServiceConfig;
 
+const DEFAULT_SERVICE_PORT: u16 = 8000;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub api_config: ApiConfig,
@@ -32,7 +34,7 @@ impl Config {
         let port = env::var("PORT")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(8000);
+            .unwrap_or(DEFAULT_SERVICE_PORT);
 
         let services = Self::discover_services()?;
 

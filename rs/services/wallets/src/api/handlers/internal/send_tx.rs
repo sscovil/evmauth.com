@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use alloy::consensus::{SignableTransaction, TxEip1559};
 use alloy::eips::eip2718::Typed2718;
 use alloy::hex;
@@ -24,6 +26,8 @@ const GAS_LIMIT_BUFFER_DENOMINATOR: u128 = 100;
 const MAX_FEE_GAS_PRICE_MULTIPLIER: u128 = 2;
 /// Priority fee tip: 1 gwei
 const PRIORITY_FEE_WEI: u128 = 1_000_000_000;
+/// Timeout for individual RPC calls to the blockchain node
+const RPC_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Request to sign and broadcast a transaction via a delegated account
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -33,8 +37,8 @@ pub struct SendTxRequest {
     pub org_id: Uuid,
 
     /// Target contract address (None = contract creation)
-    #[schema(example = "0x1234567890abcdef1234567890abcdef12345678")]
-    pub to: Option<String>,
+    #[schema(example = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")]
+    pub to: Option<ChecksumAddress>,
 
     /// Hex-encoded calldata or deploy bytecode
     #[schema(example = "0xdeadbeef")]
@@ -106,6 +110,7 @@ pub async fn send_tx(
     let tx_kind = match &request.to {
         Some(addr) => {
             let to: Address = addr
+                .as_str()
                 .parse()
                 .map_err(|e| ApiError::BadRequest(format!("invalid target address: {e}")))?;
             TxKind::Call(to)
@@ -116,9 +121,9 @@ pub async fn send_tx(
     // Step 4: Get nonce and gas estimates from the chain
     let provider = state.evm.provider();
 
-    let nonce = provider
-        .get_transaction_count(from_address)
+    let nonce = tokio::time::timeout(RPC_TIMEOUT, provider.get_transaction_count(from_address))
         .await
+        .map_err(|_| ApiError::Internal("nonce fetch timed out".to_string()))?
         .map_err(|e| ApiError::Internal(format!("failed to get nonce: {e}")))?;
 
     let chain_id = state.evm.config().chain_id;
@@ -146,14 +151,14 @@ pub async fn send_tx(
         gas_req = gas_req.to(addr);
     }
 
-    let gas_estimate = provider
-        .estimate_gas(gas_req)
+    let gas_estimate = tokio::time::timeout(RPC_TIMEOUT, provider.estimate_gas(gas_req))
         .await
+        .map_err(|_| ApiError::Internal("gas estimate timed out".to_string()))?
         .map_err(|e| ApiError::Internal(format!("failed to estimate gas: {e}")))?;
 
-    let gas_price = provider
-        .get_gas_price()
+    let gas_price = tokio::time::timeout(RPC_TIMEOUT, provider.get_gas_price())
         .await
+        .map_err(|_| ApiError::Internal("gas price fetch timed out".to_string()))?
         .map_err(|e| ApiError::Internal(format!("failed to get gas price: {e}")))?;
 
     tx.gas_limit = (gas_estimate * GAS_LIMIT_BUFFER_NUMERATOR) / GAS_LIMIT_BUFFER_DENOMINATOR;
@@ -205,9 +210,9 @@ pub async fn send_tx(
     encoded.push(signed_tx.tx().ty());
     signed_tx.rlp_encode(&mut encoded);
 
-    let pending = provider
-        .send_raw_transaction(&encoded)
+    let pending = tokio::time::timeout(RPC_TIMEOUT, provider.send_raw_transaction(&encoded))
         .await
+        .map_err(|_| ApiError::Internal("transaction broadcast timed out".to_string()))?
         .map_err(|e| ApiError::Internal(format!("failed to broadcast transaction: {e}")))?;
 
     let tx_hash = TxHash::new(&format!("{:#x}", pending.tx_hash()))

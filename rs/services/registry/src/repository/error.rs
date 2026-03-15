@@ -23,7 +23,7 @@ impl From<pagination::PaginationError> for RepositoryError {
         match err {
             pagination::PaginationError::InvalidCursor(msg) => RepositoryError::InvalidCursor(msg),
             pagination::PaginationError::InvalidParameters(msg) => {
-                RepositoryError::InvalidCursor(format!("Invalid pagination parameters: {msg}"))
+                RepositoryError::InvalidCursor(format!("invalid pagination parameters: {msg}"))
             }
         }
     }

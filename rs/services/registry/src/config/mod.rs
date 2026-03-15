@@ -2,6 +2,12 @@ use std::env;
 
 use alloy::primitives::Address;
 
+const DEFAULT_POSTGRES_PORT: u16 = 5432;
+const DEFAULT_POSTGRES_MAX_CONNECTIONS: u32 = 5;
+const DEFAULT_POSTGRES_MIN_CONNECTIONS: u32 = 0;
+const DEFAULT_REDIS_PORT: u16 = 6379;
+const DEFAULT_EVM_CHAIN_ID: &str = "31337";
+
 #[derive(Clone)]
 pub struct Config {
     pub pg: DatabaseConfig,
@@ -44,7 +50,7 @@ impl Config {
                     port: env::var("POSTGRES_PORT")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(5432),
+                        .unwrap_or(DEFAULT_POSTGRES_PORT),
                     user: env::var("POSTGRES_USER")?,
                     password: env::var("POSTGRES_PASSWORD")?,
                     database: env::var("POSTGRES_DB")?,
@@ -53,11 +59,11 @@ impl Config {
                     max_connections: env::var("POSTGRES_MAX_CONNECTIONS")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(5),
+                        .unwrap_or(DEFAULT_POSTGRES_MAX_CONNECTIONS),
                     min_connections: env::var("POSTGRES_MIN_CONNECTIONS")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
+                        .unwrap_or(DEFAULT_POSTGRES_MIN_CONNECTIONS),
                 },
             },
             redis: redis_client::RedisConfig {
@@ -65,7 +71,7 @@ impl Config {
                 port: env::var("REDIS_PORT")
                     .ok()
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(6379),
+                    .unwrap_or(DEFAULT_REDIS_PORT),
                 password: env::var("REDIS_PASSWORD").ok(),
             },
             evm: evm::EvmConfig {
@@ -75,7 +81,7 @@ impl Config {
                     .parse::<Address>()
                     .map_err(|e| anyhow::anyhow!("Invalid EVM_PLATFORM_CONTRACT_ADDRESS: {e}"))?,
                 chain_id: env::var("EVM_CHAIN_ID")
-                    .unwrap_or_else(|_| "31337".to_string())
+                    .unwrap_or_else(|_| DEFAULT_EVM_CHAIN_ID.to_string())
                     .parse()
                     .map_err(|e| anyhow::anyhow!("Invalid EVM_CHAIN_ID: {e}"))?,
             },

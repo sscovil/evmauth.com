@@ -118,33 +118,37 @@ pub async fn create_org_wallet(
                 )
                 .await?;
 
-            let user_id = delegated_result.result.user_ids.into_iter().next();
+            let user_id = delegated_result
+                .result
+                .user_ids
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
+                    ApiError::Internal("no delegated user ID returned from turnkey".to_string())
+                })?;
 
             // Step 3b: Create signing-only policy for the delegated account
-            if let Some(ref uid) = user_id {
-                let condition = format!(
-                    "turnkey.activity.type == '{}' && turnkey.activity.resource.userId == '{uid}'",
-                    "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2"
-                );
+            let condition = format!(
+                "turnkey.activity.type == '{}' && turnkey.activity.resource.userId == '{user_id}'",
+                "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2"
+            );
 
-                state
-                    .turnkey
-                    .create_policy(
-                        sub_org_id.clone(),
-                        state.turnkey.current_timestamp(),
-                        CreatePolicyIntentV3 {
-                            policy_name: format!("signing-only-{uid}"),
-                            effect: Effect::Allow,
-                            condition: Some(condition),
-                            consensus: None,
-                            notes: "restrict delegated account to sign_raw_payload only"
-                                .to_string(),
-                        },
-                    )
-                    .await?;
-            }
+            state
+                .turnkey
+                .create_policy(
+                    sub_org_id.clone(),
+                    state.turnkey.current_timestamp(),
+                    CreatePolicyIntentV3 {
+                        policy_name: format!("signing-only-{user_id}"),
+                        effect: Effect::Allow,
+                        condition: Some(condition),
+                        consensus: None,
+                        notes: "restrict delegated account to sign_raw_payload only".to_string(),
+                    },
+                )
+                .await?;
 
-            user_id
+            Some(user_id)
         }
         _ => None,
     };

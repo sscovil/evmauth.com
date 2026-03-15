@@ -2,6 +2,12 @@ use serde::Deserialize;
 use std::env;
 use std::time::Duration;
 
+const DEFAULT_POSTGRES_PORT: u16 = 5432;
+const DEFAULT_POSTGRES_MAX_CONNECTIONS: u32 = 5;
+const DEFAULT_POSTGRES_MIN_CONNECTIONS: u32 = 0;
+const DEFAULT_REDIS_PORT: u16 = 6379;
+const DEFAULT_S3_PRESIGNED_URL_EXPIRY_SECS: u64 = 3600;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub pg: DatabaseConfig,
@@ -43,7 +49,7 @@ impl Config {
                     port: env::var("POSTGRES_PORT")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(5432),
+                        .unwrap_or(DEFAULT_POSTGRES_PORT),
                     user: env::var("POSTGRES_USER")?,
                     password: env::var("POSTGRES_PASSWORD")?,
                     database: env::var("POSTGRES_DB")?,
@@ -52,11 +58,11 @@ impl Config {
                     max_connections: env::var("POSTGRES_MAX_CONNECTIONS")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(5),
+                        .unwrap_or(DEFAULT_POSTGRES_MAX_CONNECTIONS),
                     min_connections: env::var("POSTGRES_MIN_CONNECTIONS")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
+                        .unwrap_or(DEFAULT_POSTGRES_MIN_CONNECTIONS),
                 },
             },
             redis: redis_client::RedisConfig {
@@ -64,7 +70,7 @@ impl Config {
                 port: env::var("REDIS_PORT")
                     .ok()
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(6379),
+                    .unwrap_or(DEFAULT_REDIS_PORT),
                 password: env::var("REDIS_PASSWORD").ok(),
             },
             s3: S3Config {
@@ -77,7 +83,7 @@ impl Config {
                     env::var("S3_PRESIGNED_URL_EXPIRY_SECS")
                         .ok()
                         .and_then(|s| s.parse().ok())
-                        .unwrap_or(3600),
+                        .unwrap_or(DEFAULT_S3_PRESIGNED_URL_EXPIRY_SECS),
                 ),
             },
         };

@@ -28,14 +28,14 @@ use crate::repository::operator_grant::{OperatorGrantRepository, OperatorGrantRe
 #[derive(Debug, Deserialize)]
 struct OrgWalletResponse {
     #[allow(dead_code)] // deserialized to validate response shape
-    wallet_address: String,
+    wallet_address: ChecksumAddress,
 }
 
 /// Request body for wallets internal send-tx endpoint
 #[derive(Debug, serde::Serialize)]
 struct SendTxRequest {
     org_id: Uuid,
-    to: Option<String>,
+    to: Option<ChecksumAddress>,
     calldata: String,
 }
 
@@ -255,7 +255,7 @@ pub async fn grant_operator(
         &state,
         &SendTxRequest {
             org_id,
-            to: Some(contract.address.to_string()),
+            to: Some(contract.address.clone()),
             calldata: calldata_hex,
         },
     )
@@ -323,7 +323,7 @@ pub async fn revoke_operator(
         &state,
         &SendTxRequest {
             org_id,
-            to: Some(contract.address.to_string()),
+            to: Some(contract.address.clone()),
             calldata: calldata_hex,
         },
     )

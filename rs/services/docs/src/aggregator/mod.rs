@@ -4,9 +4,9 @@ use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AggregatorError {
-    #[error("HTTP request failed: {0}")]
+    #[error("http request failed: {0}")]
     RequestFailed(#[from] reqwest::Error),
-    #[error("Failed to parse OpenAPI spec: {0}")]
+    #[error("failed to parse openapi spec: {0}")]
     ParseFailed(#[from] serde_json::Error),
 }
 

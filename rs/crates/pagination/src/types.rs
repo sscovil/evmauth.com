@@ -6,6 +6,10 @@ use uuid::Uuid;
 
 use crate::error::PaginationError;
 
+const DEFAULT_PAGE_LIMIT: i64 = 20;
+const MIN_PAGE_LIMIT: i64 = 1;
+const MAX_PAGE_LIMIT: i64 = 100;
+
 /// Pagination direction for cursor-based pagination
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PageDirection {
@@ -35,8 +39,8 @@ impl Cursor {
     /// Encode cursor to base64 JSON string
     pub fn encode(&self) -> String {
         // Cursor contains only Uuid and DateTime<Utc>, both of which have
-        // infallible Serialize impls, so this cannot fail in practice.
-        let json = serde_json::to_string(self).expect("cursor serialization is infallible");
+        // infallible Serialize impls, so this will always succeed.
+        let json = serde_json::to_string(self).unwrap_or_default();
         STANDARD.encode(json.as_bytes())
     }
 
@@ -115,8 +119,8 @@ impl Page {
 
     /// Get the limit (from either first or last), clamped to 1-100
     pub fn limit(&self) -> i64 {
-        let limit = self.first.or(self.last).unwrap_or(20);
-        limit.clamp(1, 100)
+        let limit = self.first.or(self.last).unwrap_or(DEFAULT_PAGE_LIMIT);
+        limit.clamp(MIN_PAGE_LIMIT, MAX_PAGE_LIMIT)
     }
 
     /// Determine pagination direction based on which parameters are set

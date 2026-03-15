@@ -2,6 +2,9 @@ use serde::Deserialize;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 
+/// Connection pool acquire timeout
+const ACQUIRE_TIMEOUT_SECS: u64 = 3;
+
 /// PostgreSQL connection configuration
 #[derive(Clone, Deserialize)]
 pub struct PGConfig {
@@ -50,7 +53,7 @@ pub async fn create_pool(
     PgPoolOptions::new()
         .max_connections(max_connections)
         .min_connections(min_connections)
-        .acquire_timeout(Duration::from_secs(3))
+        .acquire_timeout(Duration::from_secs(ACQUIRE_TIMEOUT_SECS))
         .connect(connection_string)
         .await
 }
