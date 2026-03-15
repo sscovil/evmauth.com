@@ -6,6 +6,14 @@ interface FetchOptions {
     headers?: Record<string, string>;
 }
 
+function getErrorMessage(body: unknown, fallback: string): string {
+    if (body !== null && typeof body === 'object' && 'error' in body) {
+        const value = (body as Record<string, unknown>).error;
+        if (typeof value === 'string') return value;
+    }
+    return fallback;
+}
+
 async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
     const url = `${API_BASE}${path}`;
     const headers: Record<string, string> = {
@@ -21,8 +29,8 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     });
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error((error as { error: string }).error ?? `HTTP ${response.status}`);
+        const errorBody: unknown = await response.json().catch(() => null);
+        throw new Error(getErrorMessage(errorBody, `HTTP ${response.status}`));
     }
 
     return response.json() as Promise<T>;
@@ -57,19 +65,22 @@ export async function authenticate(email: string): Promise<void> {
             return;
         }
 
-        const signupError = (await signupResponse.json().catch(() => ({
-            error: 'Signup failed',
-        }))) as { error: string };
-        throw new Error(signupError.error);
+        const signupBody: unknown = await signupResponse.json().catch(() => null);
+        throw new Error(getErrorMessage(signupBody, 'Signup failed'));
     }
 
-    const loginError = (await loginResponse.json().catch(() => ({
-        error: 'Login failed',
-    }))) as { error: string };
-    throw new Error(loginError.error);
+    const loginBody: unknown = await loginResponse.json().catch(() => null);
+    throw new Error(getErrorMessage(loginBody, 'Login failed'));
 }
 
-export const api = {
+interface ApiClient {
+    get: <T>(path: string) => Promise<T>;
+    post: <T>(path: string, body: unknown) => Promise<T>;
+    patch: <T>(path: string, body: unknown) => Promise<T>;
+    delete: <T>(path: string) => Promise<T>;
+}
+
+export const api: ApiClient = {
     get: <T>(path: string): Promise<T> => request<T>(path),
     post: <T>(path: string, body: unknown): Promise<T> =>
         request<T>(path, { method: 'POST', body }),

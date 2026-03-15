@@ -1,3 +1,5 @@
+'use client';
+
 import { UserMenu } from '@/components/UserMenu';
 import { AppShell, Group, NavLink, Text } from '@mantine/core';
 import type { ReactElement, ReactNode } from 'react';

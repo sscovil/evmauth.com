@@ -1,4 +1,5 @@
 import { config } from '@/lib/config';
+import { PersonResponseSchema, TokenResponseSchema } from '@/lib/schemas';
 import type { SessionData } from '@/lib/session';
 import { sessionOptions } from '@/lib/session';
 import { getIronSession } from 'iron-session';
@@ -7,23 +8,6 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 const LoginRequestSchema = z.object({ email: z.string().email() });
-
-const TokenResponseSchema = z.object({
-    access_token: z.string(),
-    token_type: z.string(),
-    expires_in: z.number(),
-});
-
-const PersonResponseSchema = z.object({
-    id: z.string(),
-    display_name: z.string(),
-    description: z.string().nullable(),
-    auth_provider_name: z.string(),
-    auth_provider_ref: z.string(),
-    primary_email: z.string(),
-    created_at: z.string(),
-    updated_at: z.string(),
-});
 
 export async function POST(request: Request): Promise<NextResponse> {
     const parsed = LoginRequestSchema.safeParse(await request.json());
@@ -80,12 +64,5 @@ export async function POST(request: Request): Promise<NextResponse> {
     session.displayName = person.display_name;
     await session.save();
 
-    // Build response and forward Set-Cookie from backend
-    const responseHeaders = new Headers();
-    const setCookies = loginResponse.headers.getSetCookie();
-    for (const setCookie of setCookies) {
-        responseHeaders.append('Set-Cookie', setCookie);
-    }
-
-    return NextResponse.json({ success: true }, { headers: responseHeaders });
+    return NextResponse.json({ success: true });
 }

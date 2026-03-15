@@ -1,4 +1,10 @@
-export const config = {
+interface Config {
+    readonly sessionSecret: string;
+    readonly backendUrl: string;
+    readonly isProduction: boolean;
+}
+
+export const config: Config = {
     get sessionSecret(): string {
         const value = process.env.SESSION_SECRET;
         if (!value) {

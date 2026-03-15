@@ -14,6 +14,7 @@ export function UserMenu(): ReactElement | null {
     async function handleLogout() {
         await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
         await mutate('/api/auth/me', undefined, { revalidate: false });
+        await mutate('/api/proxy/auth/orgs', undefined, { revalidate: false });
         router.push('/auth/login');
     }
 

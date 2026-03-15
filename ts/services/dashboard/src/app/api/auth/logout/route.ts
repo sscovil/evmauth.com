@@ -14,7 +14,7 @@ export async function POST(): Promise<NextResponse> {
         headers.set('X-Person-Id', session.personId);
     }
 
-    const logoutResponse = await fetch(`${config.backendUrl}/auth/auth/logout`, {
+    await fetch(`${config.backendUrl}/auth/auth/logout`, {
         method: 'POST',
         headers,
     });
@@ -22,12 +22,5 @@ export async function POST(): Promise<NextResponse> {
     // Destroy iron-session regardless of backend response
     session.destroy();
 
-    // Forward Set-Cookie from backend (clears the session cookie)
-    const responseHeaders = new Headers();
-    const setCookies = logoutResponse.headers.getSetCookie();
-    for (const setCookie of setCookies) {
-        responseHeaders.append('Set-Cookie', setCookie);
-    }
-
-    return NextResponse.json({ success: true }, { headers: responseHeaders });
+    return NextResponse.json({ success: true });
 }

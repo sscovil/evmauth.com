@@ -25,6 +25,7 @@ export default function LoginPage(): ReactElement {
         try {
             await authenticate(values.email);
             await mutate('/api/auth/me');
+            await mutate('/api/proxy/auth/orgs');
             router.push('/dashboard');
         } catch (err) {
             form.setFieldError(
