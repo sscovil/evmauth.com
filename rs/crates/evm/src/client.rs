@@ -9,8 +9,11 @@ use crate::EvmError;
 /// (environment variables, config files, etc.).
 #[derive(Debug, Clone)]
 pub struct EvmConfig {
+    /// JSON-RPC endpoint URL for the target EVM chain (e.g. `https://rpc.example.com`).
     pub rpc_url: String,
+    /// On-chain address of the deployed EVMAuth6909 platform contract.
     pub platform_contract_address: Address,
+    /// Numeric chain ID used for EIP-155 transaction signing.
     pub chain_id: u64,
 }
 
@@ -29,6 +32,7 @@ pub struct EvmClient {
 }
 
 impl EvmClient {
+    /// Build a new client by parsing the RPC URL from `config` and connecting an HTTP provider.
     pub fn new(config: EvmConfig) -> Result<Self, EvmError> {
         let url: Url = config
             .rpc_url
@@ -40,14 +44,17 @@ impl EvmClient {
         Ok(Self { provider, config })
     }
 
+    /// Returns a reference to the underlying Alloy HTTP provider for direct RPC calls.
     pub fn provider(&self) -> &HttpProvider {
         &self.provider
     }
 
+    /// Returns a reference to the configuration this client was built with.
     pub fn config(&self) -> &EvmConfig {
         &self.config
     }
 
+    /// Shorthand for `self.config().platform_contract_address`.
     pub fn platform_contract_address(&self) -> Address {
         self.config.platform_contract_address
     }

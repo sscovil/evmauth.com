@@ -13,7 +13,9 @@ const MAX_PAGE_LIMIT: i64 = 100;
 /// Pagination direction for cursor-based pagination
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PageDirection {
+    /// Paginate forward from the cursor (fetch items after the cursor).
     Forward,
+    /// Paginate backward from the cursor (fetch items before the cursor).
     Backward,
 }
 
@@ -147,6 +149,7 @@ pub trait Pageable {
 /// Standard paginated response wrapper following Relay spec
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PaginatedResponse<T> {
+    /// The page of results returned by the query.
     pub data: Vec<T>,
     /// Cursor of the first item in results (for backward pagination)
     pub start_cursor: Option<String>,

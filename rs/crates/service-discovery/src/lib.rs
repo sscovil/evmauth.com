@@ -13,7 +13,9 @@ pub enum DiscoveryError {
 /// Configuration for a discovered service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
+    /// The service name as it appears in the manifest (e.g., "auth", "wallets").
     pub name: String,
+    /// The fully qualified base URL used to reach the service (e.g., "http://auth:8000").
     pub base_url: String,
 }
 
@@ -131,7 +133,9 @@ pub fn discover_services(options: &DiscoveryOptions) -> Result<Vec<ServiceConfig
 /// Health check result for a single service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceHealth {
+    /// The name of the service that was checked.
     pub name: String,
+    /// Whether the service responded successfully to its health endpoint.
     pub status: HealthStatus,
 }
 
@@ -164,7 +168,9 @@ impl std::fmt::Display for HealthStatus {
 /// Aggregated health status for all services
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregatedHealth {
+    /// The overall status across all services (healthy only if every service is healthy).
     pub status: OverallStatus,
+    /// Map of service name to its health status string (e.g., "healthy" or "unhealthy").
     pub services: HashMap<String, String>,
 }
 

@@ -44,7 +44,8 @@ impl PGConfig {
     }
 }
 
-/// Create a PostgreSQL connection pool
+/// Establish a PostgreSQL connection pool with the given size bounds and a
+/// fixed acquire timeout of [`ACQUIRE_TIMEOUT_SECS`] seconds.
 pub async fn create_pool(
     connection_string: &str,
     max_connections: u32,

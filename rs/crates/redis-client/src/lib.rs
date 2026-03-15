@@ -34,7 +34,8 @@ impl RedisConfig {
     }
 }
 
-/// Create a Redis connection manager
+/// Open a Redis client and return a reconnecting [`ConnectionManager`] that
+/// automatically re-establishes the connection on failure.
 pub async fn create_client(
     connection_string: &str,
 ) -> Result<ConnectionManager, redis::RedisError> {
