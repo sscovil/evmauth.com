@@ -1,8 +1,10 @@
 use utoipa::OpenApi;
 
-use crate::dto::request::{CreateAppRegistration, CreateContract, UpdateAppRegistration};
+use crate::dto::request::{
+    CreateAppRegistration, CreateContract, CreateRoleGrant, UpdateAppRegistration,
+};
 use crate::dto::response::{
-    AppRegistrationResponse, ContractResponse, OperatorGrantResponse, SendTxResponse,
+    AppRegistrationResponse, ContractResponse, RoleGrantResponse, SendTxResponse,
 };
 
 #[derive(OpenApi)]
@@ -10,7 +12,7 @@ use crate::dto::response::{
     info(
         title = "Registry Service API",
         version = "1.0.0",
-        description = "App registration, contract deployment, and operator grant management"
+        description = "App registration, contract deployment, and role grant management"
     ),
     paths(
         // Health
@@ -25,24 +27,27 @@ use crate::dto::response::{
         crate::api::handlers::contracts::deploy_contract,
         crate::api::handlers::contracts::list_contracts,
         crate::api::handlers::contracts::get_contract,
-        crate::api::handlers::contracts::grant_operator,
-        crate::api::handlers::contracts::revoke_operator,
+        // Role grants
+        crate::api::handlers::contracts::create_role_grant,
+        crate::api::handlers::contracts::delete_role_grant,
+        crate::api::handlers::contracts::list_role_grants,
     ),
     components(
         schemas(
             CreateAppRegistration,
             UpdateAppRegistration,
             CreateContract,
+            CreateRoleGrant,
             AppRegistrationResponse,
             ContractResponse,
-            OperatorGrantResponse,
+            RoleGrantResponse,
             SendTxResponse,
         )
     ),
     tags(
         (name = "health", description = "Health check endpoints"),
         (name = "app_registrations", description = "App registration management"),
-        (name = "contracts", description = "Contract deployment and operator management")
+        (name = "contracts", description = "Contract deployment and role management")
     )
 )]
 pub struct ApiDoc;

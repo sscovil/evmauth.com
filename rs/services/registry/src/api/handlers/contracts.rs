@@ -16,18 +16,17 @@ use types::ChecksumAddress;
 
 use crate::AppState;
 use crate::api::error::ApiError;
-use crate::dto::request::CreateContract;
-use crate::dto::response::{ContractResponse, OperatorGrantResponse, SendTxResponse};
+use crate::dto::request::{CreateContract, CreateRoleGrant};
+use crate::dto::response::{ContractResponse, RoleGrantResponse, SendTxResponse};
 use crate::repository::contract::{
     ContractRepository, ContractRepositoryImpl, CreateContractParams,
 };
-use crate::repository::operator_grant::{OperatorGrantRepository, OperatorGrantRepositoryImpl};
+use crate::repository::role_grant::{RoleGrantRepository, RoleGrantRepositoryImpl};
 
 /// Response from wallets internal org-wallet endpoint.
-/// Used to verify an org has a provisioned wallet before deployment.
+/// Used to verify an org has a provisioned wallet and to get the wallet address.
 #[derive(Debug, Deserialize)]
 struct OrgWalletResponse {
-    #[allow(dead_code)] // deserialized to validate response shape
     wallet_address: ChecksumAddress,
 }
 
@@ -85,8 +84,8 @@ pub async fn deploy_contract(
     let wallets_url = &state.config.wallets_service_url;
 
     // Step 1: Look up org wallet address
-    // Verify the org has a wallet before proceeding with deployment
-    let _org_wallet: OrgWalletResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+    // This serves as both validation and provides the address for initialDefaultAdmin
+    let org_wallet: OrgWalletResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
         state
             .http_client
             .get(format!("{wallets_url}/internal/org-wallet/{org_id}"))
@@ -108,9 +107,21 @@ pub async fn deploy_contract(
     .await
     .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
 
-    // Step 2: Encode BeaconProxy deployment bytecode
+    // Step 2: Encode BeaconProxy deployment bytecode with initialize() calldata
     let beacon_address = state.evm.platform_contract_address();
-    let deploy_bytecode = evm::encode_beacon_proxy_deploy(beacon_address, evm::Bytes::new())?;
+    let platform_operator = state.evm.platform_operator_address();
+
+    // Parse the org wallet address for use as initialDefaultAdmin and initialTreasury
+    let org_wallet_addr: evm::Address = org_wallet
+        .wallet_address
+        .as_str()
+        .parse()
+        .map_err(|e| ApiError::Internal(format!("invalid org wallet address: {e}")))?;
+
+    let init_data =
+        evm::EvmClient::encode_initialize(org_wallet_addr, org_wallet_addr, platform_operator, "");
+
+    let deploy_bytecode = evm::encode_beacon_proxy_deploy(beacon_address, init_data)?;
     let calldata_hex = format!("0x{}", alloy::hex::encode(&deploy_bytecode));
 
     // Step 3: Send deployment transaction via wallets service
@@ -208,23 +219,34 @@ pub async fn get_contract(
 
 #[utoipa::path(
     post,
-    path = "/orgs/{org_id}/contracts/{contract_id}/grant-operator",
+    path = "/orgs/{org_id}/contracts/{contract_id}/roles",
     params(
         ("org_id" = Uuid, Path, description = "Organization ID"),
         ("contract_id" = Uuid, Path, description = "Contract ID")
     ),
+    request_body = CreateRoleGrant,
     responses(
-        (status = 201, description = "Operator grant created", body = OperatorGrantResponse),
+        (status = 201, description = "Role grant created", body = RoleGrantResponse),
         (status = 400, description = "Bad request"),
         (status = 404, description = "Contract not found"),
         (status = 500, description = "Internal server error")
     ),
     tag = "contracts"
 )]
-pub async fn grant_operator(
+pub async fn create_role_grant(
     State(state): State<AppState>,
     Path((org_id, contract_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<CreateRoleGrant>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // Validate role name
+    let role_bytes = evm::roles::role_name_to_bytes(&body.role).ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "invalid role name '{}'; valid roles: {}",
+            body.role,
+            evm::roles::VALID_ROLE_NAMES.join(", ")
+        ))
+    })?;
+
     let contract_repo = ContractRepositoryImpl::new(&state.db);
     let contract = contract_repo
         .get(contract_id)
@@ -235,19 +257,22 @@ pub async fn grant_operator(
         return Err(ApiError::NotFound);
     }
 
-    // Check for existing active grant
-    let grant_repo = OperatorGrantRepositoryImpl::new(&state.db);
-    if let Some(existing) = grant_repo.get_by_contract_id(contract_id).await?
+    // Check for existing active grant of the same role
+    let grant_repo = RoleGrantRepositoryImpl::new(&state.db);
+    if let Some(existing) = grant_repo
+        .get_active_by_contract_and_role(contract_id, &body.role)
+        .await?
         && existing.active
     {
-        return Err(ApiError::BadRequest(
-            "contract already has an active operator grant".to_string(),
-        ));
+        return Err(ApiError::BadRequest(format!(
+            "contract already has an active grant for role {}",
+            body.role
+        )));
     }
 
-    // Encode setOperator(platformOperator, true) calldata
-    let platform_operator = state.evm.platform_contract_address();
-    let calldata = evm::EvmClient::encode_set_operator(platform_operator, true);
+    // Encode grantRole(role, platformOperator) calldata
+    let platform_operator = state.evm.platform_operator_address();
+    let calldata = evm::EvmClient::encode_grant_role(role_bytes, platform_operator);
     let calldata_hex = format!("0x{}", alloy::hex::encode(&calldata));
 
     // Send transaction via wallets service
@@ -263,34 +288,32 @@ pub async fn grant_operator(
 
     // Record the grant
     let grant = grant_repo
-        .create(contract_id, &send_tx_response.tx_hash)
+        .create(contract_id, &body.role, &send_tx_response.tx_hash)
         .await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(OperatorGrantResponse::from(grant)),
-    ))
+    Ok((StatusCode::CREATED, Json(RoleGrantResponse::from(grant))))
 }
 
 #[utoipa::path(
-    post,
-    path = "/orgs/{org_id}/contracts/{contract_id}/revoke-operator",
+    delete,
+    path = "/orgs/{org_id}/contracts/{contract_id}/roles/{role_grant_id}",
     params(
         ("org_id" = Uuid, Path, description = "Organization ID"),
-        ("contract_id" = Uuid, Path, description = "Contract ID")
+        ("contract_id" = Uuid, Path, description = "Contract ID"),
+        ("role_grant_id" = Uuid, Path, description = "Role grant ID")
     ),
     responses(
-        (status = 200, description = "Operator grant revoked", body = OperatorGrantResponse),
+        (status = 200, description = "Role grant revoked", body = RoleGrantResponse),
         (status = 400, description = "No active grant to revoke"),
         (status = 404, description = "Contract not found"),
         (status = 500, description = "Internal server error")
     ),
     tag = "contracts"
 )]
-pub async fn revoke_operator(
+pub async fn delete_role_grant(
     State(state): State<AppState>,
-    Path((org_id, contract_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<OperatorGrantResponse>, ApiError> {
+    Path((org_id, contract_id, role_grant_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<RoleGrantResponse>, ApiError> {
     let contract_repo = ContractRepositoryImpl::new(&state.db);
     let contract = contract_repo
         .get(contract_id)
@@ -301,21 +324,31 @@ pub async fn revoke_operator(
         return Err(ApiError::NotFound);
     }
 
-    let grant_repo = OperatorGrantRepositoryImpl::new(&state.db);
-    let existing = grant_repo
-        .get_by_contract_id(contract_id)
-        .await?
-        .ok_or_else(|| ApiError::BadRequest("no active operator grant to revoke".to_string()))?;
+    let grant_repo = RoleGrantRepositoryImpl::new(&state.db);
+
+    // Look up the grant to get the role name for encoding
+    let grants = grant_repo.list_by_contract_id(contract_id).await?;
+    let existing = grants
+        .into_iter()
+        .find(|g| g.id == role_grant_id)
+        .ok_or_else(|| ApiError::BadRequest("role grant not found".to_string()))?;
 
     if !existing.active {
         return Err(ApiError::BadRequest(
-            "operator grant is already revoked".to_string(),
+            "role grant is already revoked".to_string(),
         ));
     }
 
-    // Encode setOperator(platformOperator, false) calldata
-    let platform_operator = state.evm.platform_contract_address();
-    let calldata = evm::EvmClient::encode_set_operator(platform_operator, false);
+    let role_bytes = evm::roles::role_name_to_bytes(&existing.role).ok_or_else(|| {
+        ApiError::Internal(format!(
+            "stored role name '{}' is not recognized",
+            existing.role
+        ))
+    })?;
+
+    // Encode revokeRole(role, platformOperator) calldata
+    let platform_operator = state.evm.platform_operator_address();
+    let calldata = evm::EvmClient::encode_revoke_role(role_bytes, platform_operator);
     let calldata_hex = format!("0x{}", alloy::hex::encode(&calldata));
 
     // Send transaction via wallets service
@@ -334,5 +367,40 @@ pub async fn revoke_operator(
         .revoke(existing.id, &send_tx_response.tx_hash)
         .await?;
 
-    Ok(Json(OperatorGrantResponse::from(revoked)))
+    Ok(Json(RoleGrantResponse::from(revoked)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/orgs/{org_id}/contracts/{contract_id}/roles",
+    params(
+        ("org_id" = Uuid, Path, description = "Organization ID"),
+        ("contract_id" = Uuid, Path, description = "Contract ID")
+    ),
+    responses(
+        (status = 200, description = "List of role grants", body = Vec<RoleGrantResponse>),
+        (status = 404, description = "Contract not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "contracts"
+)]
+pub async fn list_role_grants(
+    State(state): State<AppState>,
+    Path((org_id, contract_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<RoleGrantResponse>>, ApiError> {
+    let contract_repo = ContractRepositoryImpl::new(&state.db);
+    let contract = contract_repo
+        .get(contract_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if contract.org_id != org_id {
+        return Err(ApiError::NotFound);
+    }
+
+    let grant_repo = RoleGrantRepositoryImpl::new(&state.db);
+    let grants = grant_repo.list_by_contract_id(contract_id).await?;
+    let responses: Vec<RoleGrantResponse> = grants.into_iter().map(Into::into).collect();
+
+    Ok(Json(responses))
 }

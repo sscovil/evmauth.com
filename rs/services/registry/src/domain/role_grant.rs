@@ -4,9 +4,10 @@ use types::TxHash;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct OperatorGrant {
+pub struct RoleGrant {
     pub id: Uuid,
     pub contract_id: Uuid,
+    pub role: String,
     pub grant_tx_hash: TxHash,
     pub revoke_tx_hash: Option<TxHash>,
     pub active: bool,

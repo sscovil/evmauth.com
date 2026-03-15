@@ -11,8 +11,11 @@ use crate::EvmError;
 pub struct EvmConfig {
     /// JSON-RPC endpoint URL for the target EVM chain (e.g. `https://rpc.example.com`).
     pub rpc_url: String,
-    /// On-chain address of the deployed EVMAuth6909 platform contract.
+    /// On-chain address of the deployed EVMAuth6909 platform contract (beacon).
     pub platform_contract_address: Address,
+    /// On-chain address of the platform operator wallet used for routine operations
+    /// (deploying proxies, minting/burning tokens). Receives non-admin roles on new proxies.
+    pub platform_operator_address: Address,
     /// Numeric chain ID used for EIP-155 transaction signing.
     pub chain_id: u64,
 }
@@ -57,5 +60,10 @@ impl EvmClient {
     /// Shorthand for `self.config().platform_contract_address`.
     pub fn platform_contract_address(&self) -> Address {
         self.config.platform_contract_address
+    }
+
+    /// Shorthand for `self.config().platform_operator_address`.
+    pub fn platform_operator_address(&self) -> Address {
+        self.config.platform_operator_address
     }
 }

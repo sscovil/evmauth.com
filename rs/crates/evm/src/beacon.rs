@@ -18,8 +18,8 @@ sol! {
 
 /// Returns the full deployment bytecode for a BeaconProxy contract.
 ///
-/// The `init_data` parameter is typically empty (`Bytes::new()`) when no
-/// initializer call is needed (e.g., for EVMAuth6909 proxies).
+/// The `init_data` parameter contains ABI-encoded calldata for the proxy's
+/// initializer function (e.g., `initialize(...)` for EVMAuth6909 proxies).
 pub fn encode_beacon_proxy_deploy(beacon: Address, init_data: Bytes) -> Result<Bytes, EvmError> {
     let hex_str = BEACON_PROXY_BYTECODE_HEX
         .trim()

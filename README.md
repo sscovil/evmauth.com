@@ -36,25 +36,28 @@ tilt up
 
 Tilt auto-discovers all services in `rs/services/` and `ts/services/` and starts them with hot reload.
 
-### 4. Fund the platform operator wallet
+### 4. Deploy EVMAuth contracts
 
-The platform operator wallet is managed by Turnkey, so Anvil default private keys cannot be used for deployment. Use the internal CLI tool to fund the operator address on local Anvil:
+The platform uses two Turnkey-managed wallets (beacon owner and platform operator), so Anvil default private keys cannot be used for contract deployment. The Tilt dashboard provides manual tasks for funding and deploying:
+
+1. **Fund wallets** -- In Tilt, trigger the `fund-wallets` task. This sends 100 ETH from Anvil account #0 to both `BEACON_OWNER_ADDRESS` and `PLATFORM_OPERATOR_ADDRESS` (read from your `.env`). This is the only step that uses an Anvil default key, since it's just a funding transfer.
+
+2. **Deploy beacon** -- Trigger the `deploy-beacon` task. Deploys the EVMAuth beacon implementation contract via the beacon owner wallet through the wallets service `/internal/send-tx` endpoint.
+
+3. **Deploy platform proxy** -- Trigger the `deploy-platform` task. Deploys the platform proxy contract (pointing to the beacon) via the platform operator wallet through the wallets service.
+
+These tasks can also be run directly:
 
 ```bash
-cargo run --package evmauth-cli -- fund <platform-operator-address> --amount 100
-```
-
-### 5. Deploy EVMAuth contracts
-
-```bash
-# Deploy the beacon implementation
+cargo run --package evmauth-cli -- fund $BEACON_OWNER_ADDRESS --amount 100
+cargo run --package evmauth-cli -- fund $PLATFORM_OPERATOR_ADDRESS --amount 100
 cargo run --package evmauth-cli -- deploy beacon
-
-# Deploy the platform proxy
 cargo run --package evmauth-cli -- deploy platform --beacon <beacon-address>
 ```
 
-### 6. Run checks
+Both wallets are Turnkey-managed HD wallets created once in the Turnkey console within the parent org. Their addresses are recorded in your `.env` file as static configuration values (see `PROJECT_PLAN.md` Section 14 for all environment variables).
+
+### 5. Run checks
 
 ```bash
 ./check.sh

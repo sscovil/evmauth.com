@@ -52,13 +52,14 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
             "/orgs/{org_id}/contracts/{contract_id}",
             get(contracts::get_contract),
         )
+        // Role grant routes
         .route(
-            "/orgs/{org_id}/contracts/{contract_id}/grant-operator",
-            post(contracts::grant_operator),
+            "/orgs/{org_id}/contracts/{contract_id}/roles",
+            post(contracts::create_role_grant).get(contracts::list_role_grants),
         )
         .route(
-            "/orgs/{org_id}/contracts/{contract_id}/revoke-operator",
-            post(contracts::revoke_operator),
+            "/orgs/{org_id}/contracts/{contract_id}/roles/{role_grant_id}",
+            axum::routing::delete(contracts::delete_role_grant),
         );
 
     #[cfg(feature = "internal-api")]

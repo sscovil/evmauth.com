@@ -11,6 +11,8 @@ pub use alloy::primitives::{Address, Bytes, U256};
 pub use beacon::encode_beacon_proxy_deploy;
 /// Re-export the EVM client and its configuration struct.
 pub use client::{EvmClient, EvmConfig};
+/// Re-export EVMAuth role constants and helpers.
+pub use evmauth::roles;
 
 use thiserror::Error;
 

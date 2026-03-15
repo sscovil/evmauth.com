@@ -94,6 +94,9 @@ impl Config {
                 platform_contract_address: env::var("EVM_PLATFORM_CONTRACT_ADDRESS")?
                     .parse()
                     .map_err(|e| anyhow::anyhow!("Invalid EVM_PLATFORM_CONTRACT_ADDRESS: {e}"))?,
+                platform_operator_address: env::var("EVM_PLATFORM_OPERATOR_ADDRESS")?
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("Invalid EVM_PLATFORM_OPERATOR_ADDRESS: {e}"))?,
                 chain_id: env::var("EVM_CHAIN_ID")
                     .unwrap_or_else(|_| DEFAULT_EVM_CHAIN_ID.to_string())
                     .parse()

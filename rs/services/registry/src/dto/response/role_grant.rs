@@ -4,15 +4,18 @@ use types::TxHash;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::domain::OperatorGrant;
+use crate::domain::RoleGrant;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct OperatorGrantResponse {
+pub struct RoleGrantResponse {
     #[schema(example = "550e8400-e29b-41d4-a716-446655440000", format = "uuid")]
     pub id: Uuid,
 
     #[schema(example = "660e8400-e29b-41d4-a716-446655440000", format = "uuid")]
     pub contract_id: Uuid,
+
+    #[schema(example = "MINTER_ROLE")]
+    pub role: String,
 
     #[schema(example = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")]
     pub grant_tx_hash: TxHash,
@@ -35,11 +38,12 @@ pub struct OperatorGrantResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<OperatorGrant> for OperatorGrantResponse {
-    fn from(g: OperatorGrant) -> Self {
+impl From<RoleGrant> for RoleGrantResponse {
+    fn from(g: RoleGrant) -> Self {
         Self {
             id: g.id,
             contract_id: g.contract_id,
+            role: g.role,
             grant_tx_hash: g.grant_tx_hash,
             revoke_tx_hash: g.revoke_tx_hash,
             active: g.active,

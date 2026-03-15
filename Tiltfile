@@ -438,3 +438,37 @@ local_resource(
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False,
 )
+
+local_resource(
+    "fund-wallets",
+    cmd="cargo run --package evmauth-cli -- fund {} --amount 100 && cargo run --package evmauth-cli -- fund {} --amount 100".format(
+        os.getenv("BEACON_OWNER_ADDRESS", ""),
+        os.getenv("PLATFORM_OPERATOR_ADDRESS", ""),
+    ),
+    dir="rs",
+    labels=["tasks"],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+)
+
+local_resource(
+    "deploy-beacon",
+    cmd="cargo run --package evmauth-cli -- deploy beacon",
+    dir="rs",
+    labels=["tasks"],
+    resource_deps=["wallets"],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+)
+
+local_resource(
+    "deploy-platform",
+    cmd="cargo run --package evmauth-cli -- deploy platform --beacon {}".format(
+        os.getenv("EVMAUTH_BEACON_ADDRESS", ""),
+    ),
+    dir="rs",
+    labels=["tasks"],
+    resource_deps=["wallets"],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+)

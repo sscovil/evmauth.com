@@ -20,11 +20,12 @@ CREATE TRIGGER but_contracts_moddatetime
     FOR EACH ROW
 EXECUTE FUNCTION moddatetime(updated_at);
 
--- Platform operator grants: deployer has called setOperator on their contract
--- granting the platform operator wallet mint/burn access.
-CREATE TABLE registry.operator_grants (
+-- EVMAuth role grants: platform operator roles granted on deployer contracts.
+-- Each row tracks a grantRole/revokeRole lifecycle for a specific role.
+CREATE TABLE registry.role_grants (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     contract_id     UUID NOT NULL REFERENCES registry.contracts(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL,           -- EVMAuth role name (e.g. 'MINTER_ROLE')
     grant_tx_hash   TEXT NOT NULL,
     revoke_tx_hash  TEXT,
     active          BOOLEAN NOT NULL DEFAULT true,
@@ -33,9 +34,9 @@ CREATE TABLE registry.operator_grants (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_operator_grants_contract_id ON registry.operator_grants(contract_id);
+CREATE INDEX idx_role_grants_contract_id ON registry.role_grants(contract_id);
 
-CREATE TRIGGER but_operator_grants_moddatetime
-    BEFORE UPDATE ON registry.operator_grants
+CREATE TRIGGER but_role_grants_moddatetime
+    BEFORE UPDATE ON registry.role_grants
     FOR EACH ROW
 EXECUTE FUNCTION moddatetime(updated_at);

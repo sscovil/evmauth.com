@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO registry.operator_grants (contract_id, grant_tx_hash)\n            VALUES ($1, $2)\n            RETURNING id, contract_id, grant_tx_hash, revoke_tx_hash as \"revoke_tx_hash: _\", active, granted_at, revoked_at, created_at, updated_at\n            ",
+  "query": "\n            INSERT INTO registry.role_grants (contract_id, role, grant_tx_hash)\n            VALUES ($1, $2, $3)\n            RETURNING id, contract_id, role, grant_tx_hash, revoke_tx_hash as \"revoke_tx_hash: _\", active, granted_at, revoked_at, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -15,36 +15,41 @@
       },
       {
         "ordinal": 2,
-        "name": "grant_tx_hash",
+        "name": "role",
         "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "revoke_tx_hash: _",
+        "name": "grant_tx_hash",
         "type_info": "Text"
       },
       {
         "ordinal": 4,
+        "name": "revoke_tx_hash: _",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
         "name": "active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "granted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "revoked_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -52,10 +57,12 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Text",
         "Text"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -67,5 +74,5 @@
       false
     ]
   },
-  "hash": "9b91f3f2a56fbdce4426a3475ead3c8b3ddcb60f9351911edc281ca274adbedd"
+  "hash": "55429744be5f5d9a690e021da5f19d1a69db5a2ff731f1b273c041a0deefc510"
 }
