@@ -57,5 +57,6 @@ jsonwebtoken = { workspace = true }
 # OpenAPI documentation
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
+subtle = "2.6.1"
 
 [dev-dependencies]

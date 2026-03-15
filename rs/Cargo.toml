@@ -13,7 +13,6 @@ members = [
     "crates/postgres",
     "crates/redis-client",
     "crates/service-discovery",
-    "crates/turnkey",
     "crates/evm",
 ]
 
@@ -77,4 +76,5 @@ pagination = { path = "crates/pagination" }
 postgres = { path = "crates/postgres" }
 redis-client = { path = "crates/redis-client" }
 service-discovery = { path = "crates/service-discovery" }
-turnkey = { path = "crates/turnkey" }
+turnkey_client = "0.6"
+turnkey_api_key_stamper = "0.6"

@@ -3,11 +3,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use turnkey_client::generated::immutable::activity::v1::SignRawPayloadIntentV2;
+use turnkey_client::generated::immutable::common::v1::{HashFunction, PayloadEncoding};
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::repository::org_wallet::{OrgWalletRepository, OrgWalletRepositoryImpl};
-
-use turnkey::signing::{HashFunction, PayloadEncoding, SignRawPayloadParams};
 
 /// Request to sign a payload via delegated account
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -60,7 +61,6 @@ pub async fn sign_payload(
     State(state): State<AppState>,
     Json(request): Json<SignRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Step 1: Look up the org wallet to get the sub-org and delegated user
     let repo = OrgWalletRepositoryImpl::new(&state.db);
     let org_wallet = repo
         .get_by_org_id(request.org_id)
@@ -69,51 +69,52 @@ pub async fn sign_payload(
 
     let delegated_user_id = org_wallet.turnkey_delegated_user_id.ok_or_else(|| {
         ApiError::BadRequest(format!(
-            "Organization {} does not have a delegated signing account",
+            "organization {} does not have a delegated signing account",
             request.org_id,
         ))
     })?;
 
-    // Step 2: Parse encoding and hash function
     let encoding = match request.encoding.as_str() {
-        "hexadecimal" => PayloadEncoding::PayloadEncodingHexadecimal,
-        "utf8" => PayloadEncoding::PayloadEncodingUtf8,
+        "hexadecimal" => PayloadEncoding::Hexadecimal,
+        "utf8" => PayloadEncoding::TextUtf8,
         other => {
             return Err(ApiError::BadRequest(format!(
-                "Unsupported encoding: {other}. Use 'hexadecimal' or 'utf8'",
+                "unsupported encoding: {other}. Use 'hexadecimal' or 'utf8'",
             )));
         }
     };
 
     let hash_function = match request.hash_function.as_str() {
-        "no_op" => HashFunction::HashFunctionNoOp,
-        "sha256" => HashFunction::HashFunctionSha256,
-        "keccak256" => HashFunction::HashFunctionKeccak256,
+        "no_op" => HashFunction::NoOp,
+        "sha256" => HashFunction::Sha256,
+        "keccak256" => HashFunction::Keccak256,
         other => {
             return Err(ApiError::BadRequest(format!(
-                "Unsupported hash function: {other}. Use 'no_op', 'sha256', or 'keccak256'",
+                "unsupported hash function: {other}. Use 'no_op', 'sha256', or 'keccak256'",
             )));
         }
     };
 
-    // Step 3: Sign via Turnkey API
-    let signature = state
+    let result = state
         .turnkey
-        .sign_raw_payload(SignRawPayloadParams {
-            sub_org_id: org_wallet.turnkey_sub_org_id,
-            user_id: delegated_user_id,
-            payload: request.payload,
-            encoding,
-            hash_function,
-        })
+        .sign_raw_payload(
+            org_wallet.turnkey_sub_org_id,
+            state.turnkey.current_timestamp(),
+            SignRawPayloadIntentV2 {
+                sign_with: delegated_user_id,
+                payload: request.payload,
+                encoding,
+                hash_function,
+            },
+        )
         .await?;
 
     Ok((
         StatusCode::OK,
         Json(SignResponse {
-            r: signature.r,
-            s: signature.s,
-            v: signature.v,
+            r: result.result.r,
+            s: result.result.s,
+            v: result.result.v,
         }),
     ))
 }

@@ -84,7 +84,7 @@ pub async fn deploy_contract(
 
     // Step 2: Encode BeaconProxy deployment bytecode
     let beacon_address = state.evm.platform_contract_address();
-    let deploy_bytecode = evm::encode_beacon_proxy_deploy(beacon_address, evm::Bytes::new());
+    let deploy_bytecode = evm::encode_beacon_proxy_deploy(beacon_address, evm::Bytes::new())?;
     let calldata_hex = format!("0x{}", alloy::hex::encode(&deploy_bytecode));
 
     // Step 3: Send deployment transaction via wallets service

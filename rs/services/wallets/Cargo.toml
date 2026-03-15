@@ -53,6 +53,7 @@ evm = { workspace = true }
 alloy = { workspace = true }
 
 # Turnkey
-turnkey = { workspace = true }
+turnkey_client = { workspace = true }
+turnkey_api_key_stamper = { workspace = true }
 
 [dev-dependencies]

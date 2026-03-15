@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-14 (rev 9)
+> **Last updated:** 2026-03-14 (rev 11)
 
 ---
 
@@ -210,13 +210,6 @@ evmauth.com/
 │       ├── postgres/              # EXISTING: PgPool creation + config
 │       ├── redis-client/          # EXISTING: Redis ConnectionManager wrapper
 │       ├── service-discovery/     # EXISTING: Service auto-discovery + health checks
-│       ├── turnkey/               # EXISTING: Turnkey API client
-│       │   ├── Cargo.toml
-│       │   └── src/
-│       │       ├── lib.rs
-│       │       ├── client.rs
-│       │       ├── sub_org.rs
-│       │       └── signing.rs
 │       └── evm/                   # EXISTING: Alloy-based EVM interaction
 │           ├── Cargo.toml
 │           └── src/
@@ -239,28 +232,36 @@ evmauth.com/
 │   │           ├── middleware.ts          # Route protection (iron-session)
 │   │           ├── app/
 │   │           │   ├── layout.tsx
-│   │           │   ├── page.tsx
+│   │           │   ├── page.tsx           # Landing page (with metadata)
+│   │           │   ├── error.tsx          # Root error boundary
 │   │           │   ├── dashboard/
 │   │           │   │   ├── layout.tsx     # AppShell with UserMenu + sidebar
 │   │           │   │   ├── page.tsx       # Org overview (OrgList)
+│   │           │   │   ├── loading.tsx    # Skeleton loading state
+│   │           │   │   ├── error.tsx      # Dashboard error boundary
 │   │           │   │   └── [orgSlug]/
 │   │           │   │       ├── contracts/
 │   │           │   │       ├── apps/
 │   │           │   │       ├── members/
 │   │           │   │       └── settings/
 │   │           │   ├── auth/
-│   │           │   │   ├── login/         # Email login with signup fallback
+│   │           │   │   ├── login/
+│   │           │   │   │   ├── page.tsx   # Email login (Mantine useForm)
+│   │           │   │   │   ├── layout.tsx # Login metadata
+│   │           │   │   │   └── error.tsx  # Login error boundary
 │   │           │   │   ├── callback/
 │   │           │   │   └── end-user/
 │   │           │   └── api/
-│   │           │       ├── auth/          # login, signup, logout, me routes
-│   │           │       └── proxy/         # Forwards to backend with cookie passthrough
+│   │           │       ├── auth/          # login, signup, logout, me (Zod-validated)
+│   │           │       └── proxy/         # Forwards to backend with session auth
 │   │           ├── components/
 │   │           │   ├── UserMenu.tsx       # Header dropdown (name, email, sign out)
 │   │           │   ├── OrgCard.tsx        # Org card with visibility badge
 │   │           │   └── OrgList.tsx        # Grid of OrgCards with loading/empty states
 │   │           ├── lib/
-│   │           │   ├── api-client.ts      # Fetch-based API client
+│   │           │   ├── config.ts          # Validated env var access (single source of truth)
+│   │           │   ├── schemas.ts         # Shared Zod schemas (TokenResponse, PersonResponse)
+│   │           │   ├── api-client.ts      # Fetch-based API client + authenticate()
 │   │           │   ├── session.ts         # iron-session config + SessionData type
 │   │           │   └── hooks.ts           # SWR hooks (useMe, useOrgs)
 │   │           └── types/
@@ -318,6 +319,9 @@ evmauth.com/
 | `utoipa` 5 + `utoipa-axum` 0.1 | OpenAPI docs | Auto-generated from annotations |
 | `redis` 1.0.1 | Cache | ConnectionManager abstraction |
 | `alloy` 1.x | Ethereum interaction | Provider, contract calls, ABI encoding (via evm crate) |
+| `turnkey_client` 0.6 | Turnkey API SDK | Typed activity methods, retry logic, P-256 auth |
+| `turnkey_api_key_stamper` 0.6 | Turnkey request signing | P-256 ECDSA stamps for API authentication |
+| `subtle` 2.6 | Constant-time comparison | Timing-safe credential verification in auth service |
 
 ### Backend (To Add)
 
@@ -334,10 +338,17 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 | `pnpm` | Package manager (workspace-native) | Root |
 | `next` latest stable | Framework | `ts/services/dashboard` |
 | `@mantine/core` + `@mantine/hooks` + `@mantine/form` + `@mantine/notifications` | UI components | `ts/packages/ui` |
-| `@turnkey/sdk-browser` | End-user Turnkey interactions | `ts/services/dashboard` |
-| `@turnkey/sdk-react` | Turnkey provider/hooks | `ts/services/dashboard` |
 | `iron-session` | Encrypted cookie sessions (deployer dashboard auth) | `ts/services/dashboard` |
 | `swr` | Data fetching / cache invalidation | `ts/services/dashboard` |
+| `zod` | Runtime validation (API request/response schemas) | `ts/services/dashboard` |
+| `@types/cookie` | Type definitions for iron-session's cookie dependency | `ts/services/dashboard` (devDependency) |
+
+**To add when implementing end-user auth (Phase 3):**
+
+| Dependency | Purpose | Location |
+|---|---|---|
+| `@turnkey/sdk-browser` | End-user Turnkey interactions | `ts/services/dashboard` |
+| `@turnkey/sdk-react` | Turnkey provider/hooks | `ts/services/dashboard` |
 | `typescript` | | Root |
 | `biome` | Linting + formatting (replaces ESLint + Prettier) | Root |
 
@@ -807,11 +818,14 @@ Manages all Turnkey sub-org lifecycle, wallet creation, and signing operations. 
 pub struct AppState {
     pub db: PgPool,
     pub redis: ConnectionManager,
-    pub turnkey: Arc<TurnkeyClient>,
+    pub turnkey: Arc<turnkey_client::TurnkeyClient<TurnkeyP256ApiKey>>,
+    pub turnkey_parent_org_id: String,
     pub evm: Arc<EvmClient>,
     pub config: Arc<Config>,
 }
 ```
+
+The wallets service uses the official Turnkey Rust SDK (`turnkey_client` + `turnkey_api_key_stamper`) directly -- no wrapper crate. The SDK provides typed activity methods (e.g., `create_sub_organization`, `create_wallet`, `sign_raw_payload`), built-in retry logic with exponential backoff, and P-256 ECDSA request signing via the `Stamp` trait.
 
 ### Registry Service (To Build)
 
@@ -935,31 +949,29 @@ Three middleware layers used across services:
 
 The public key for JWT verification is exposed at `GET /auth/.well-known/jwks.json` (via gateway).
 
-### Turnkey Crate (`rs/crates/turnkey/`) -- Existing
+### Turnkey SDK Integration -- Existing
 
-Turnkey API client wrapping `reqwest`. Used exclusively by the wallets service. All API calls are wrapped in retry logic with exponential backoff (3 attempts).
+The wallets service uses the official Turnkey Rust SDK directly (`turnkey_client` 0.6 + `turnkey_api_key_stamper` 0.6). There is no custom turnkey wrapper crate -- the SDK provides everything needed:
 
-`TurnkeyConfig` is a plain data struct -- it does not read environment variables. The consuming service (wallets) is responsible for populating it from its own config source.
+- **`turnkey_client::TurnkeyClient<S: Stamp>`** -- typed activity methods with built-in retry logic (`RetryConfig` with exponential backoff, default 5 attempts)
+- **`turnkey_api_key_stamper::TurnkeyP256ApiKey`** -- P-256 ECDSA request signing (replaces placeholder stamp implementation)
+- **`TurnkeyClientError`** -- structured error enum with variants for HTTP failures, activity failures, stamper errors, retry exhaustion, etc.
+- **Typed SDK intents and results** -- e.g., `CreateSubOrganizationIntentV7`, `CreateWalletIntent`, `SignRawPayloadIntentV2` with concrete result types (`ActivityResult<T>`)
+
+The client is constructed in the wallets service `main.rs`:
 
 ```rust
-pub struct TurnkeyConfig {
-    pub api_base_url: String,
-    pub parent_org_id: String,
-    pub api_public_key: String,
-    pub api_private_key: String,
-}
-
-pub struct TurnkeyClient { /* reqwest client + config */ }
-
-impl TurnkeyClient {
-    pub fn new(config: TurnkeyConfig) -> Result<Self, TurnkeyError>;
-    pub async fn create_sub_org(&self, params: CreateSubOrg) -> Result<SubOrgResponse>;
-    pub async fn create_delegated_account(&self, params: CreateDelegatedAccount) -> Result<DelegatedAccountResponse>;
-    pub async fn create_wallet(&self, params: CreateWallet) -> Result<WalletResponse>;
-    pub async fn create_wallet_account(&self, params: CreateWalletAccount) -> Result<WalletAccountResponse>;
-    pub async fn sign_raw_payload(&self, params: SignRawPayloadParams) -> Result<SignatureResponse>;
-}
+let api_key = TurnkeyP256ApiKey::from_strings(
+    &config.turnkey.api_private_key,
+    Some(&config.turnkey.api_public_key),
+)?;
+let turnkey = turnkey_client::TurnkeyClient::builder()
+    .api_key(api_key)
+    .base_url(&config.turnkey.api_base_url)
+    .build()?;
 ```
+
+Handlers use SDK intent types directly (e.g., `CreateSubOrganizationIntentV7`, `WalletAccountParams`) and SDK enum types (e.g., `Curve::Secp256k1`, `AddressFormat::Ethereum`, `PayloadEncoding::Hexadecimal`).
 
 ### EVM Crate (`rs/crates/evm/`) -- Existing
 
@@ -980,13 +992,18 @@ pub struct EvmClient { /* Alloy HTTP provider + config */ }
 
 impl EvmClient {
     pub fn new(config: EvmConfig) -> Result<Self, EvmError>;
-    pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256>;
-    pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool>;
+    pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256>;  // 10s timeout
+    pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool>;  // 10s timeout
     pub fn encode_mint(to: Address, token_id: U256, amount: U256) -> Bytes;  // static
+    pub fn encode_set_operator(operator: Address, approved: bool) -> Bytes;  // static
 }
+
+pub fn encode_beacon_proxy_deploy(beacon: Address, init_data: Bytes) -> Result<Bytes, EvmError>;
 ```
 
-Future additions: `deploy_beacon_proxy`, `balances_for` (batch query for multiple token IDs), `encode_initialize_admin(admin_address)` (encodes proxy initializer data with admin address).
+All RPC calls are wrapped in `tokio::time::timeout` (10s) to prevent hangs from unresponsive nodes. The `EvmError` enum includes a `Timeout` variant for this.
+
+Future additions: `balances_for` (batch query for multiple token IDs), `encode_initialize_admin(admin_address)` (encodes proxy initializer data with admin address).
 
 ### Accounts Endpoint (Authorization Query -- Registry Service)
 
@@ -1081,9 +1098,12 @@ This is the primary frontend application. It serves the deployer dashboard and t
 
 ```typescript
 // src/app/api/proxy/[...path]/route.ts
-// Forwards all requests to BACKEND_URL (gateway), attaches session, streams response.
-// Handles GET, POST, PATCH, DELETE.
-// Strips cookies before forwarding; re-attaches Authorization from session.
+// Reads iron-session server-side via getIronSession.
+// Rejects unauthenticated requests with 401.
+// Forwards requests to BACKEND_URL (gateway) with X-Person-Id header from session.
+// Strips raw browser cookies -- never forwards Cookie header to the backend.
+// Handles GET, POST, PATCH, PUT, DELETE.
+// Forwards non-2xx responses with original status codes.
 ```
 
 The proxy also handles the one case where the frontend does need to talk to Turnkey directly: the end-user auth callback page uses `@turnkey/sdk-browser` to decrypt the credential Turnkey returns after OIDC. This happens in the browser, then the decrypted credential is sent to the backend to complete authentication.
@@ -1111,26 +1131,29 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 
 #### Session Management
 
-Dual-cookie strategy. The backend sets an HTTP-only `session` cookie (RS256 JWT) for backend API authentication. The frontend creates a parallel `iron-session` cookie (`evmauth-dashboard`) for Next.js middleware route protection. The iron-session stores `{ personId, email, displayName }` -- just enough for middleware to decide redirects. Both cookies have an 8-hour max age.
+The frontend uses `iron-session` for encrypted cookie-based sessions. The iron-session cookie (`evmauth-dashboard`) stores `{ personId, email, displayName }` with `httpOnly: true`, `secure` in production, `sameSite: 'strict'`, and 8-hour max age. The `SESSION_SECRET` is loaded via `lib/config.ts` which throws if the env var is missing (no hardcoded fallback).
 
-Next.js API routes (`/api/auth/login`, `/api/auth/signup`, `/api/auth/logout`) act as the bridge -- they call the backend, forward the backend's `Set-Cookie` header, then create/destroy the iron-session. The `/api/auth/me` route returns the iron-session data for client-side session checks.
+Next.js API routes (`/api/auth/login`, `/api/auth/signup`, `/api/auth/logout`) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the dashboard manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
 
-The API proxy (`/api/proxy/[...path]`) forwards `Cookie` headers to the backend and `Set-Cookie` headers from backend responses, ensuring the backend session cookie flows through transparently.
+The API proxy (`/api/proxy/[...path]`) reads the iron-session server-side, rejects unauthenticated requests, and forwards requests to the backend with an `X-Person-Id` header. Raw browser cookies are never forwarded.
 
 `middleware.ts` protects `/dashboard/*` routes: redirects to `/auth/login` if no valid iron-session. Also redirects authenticated users away from `/auth/login` to `/dashboard`.
 
 #### Data Fetching
 
-Use `swr` for all dashboard data. Define a central `fetcher` that calls the proxy routes. Pass `{ revalidateOnFocus: false }` for contract/org data that changes infrequently. Use `mutate` after write operations.
+Use `swr` for all dashboard data. SWR hooks are defined in `lib/hooks.ts` (e.g., `useMe`, `useOrgs`) -- never inline `useSWR` in components. Every component consuming a SWR hook handles loading, error, and success states. Use `mutate` after write operations to revalidate all affected cache keys.
 
 ```typescript
 // src/lib/api-client.ts
-export const api = {
-  get: <T>(path: string) => fetcher<T>(`/api/proxy${path}`),
-  post: <T>(path: string, body: unknown) => mutate<T>(`/api/proxy${path}`, 'POST', body),
-  patch: <T>(path: string, body: unknown) => mutate<T>(`/api/proxy${path}`, 'PATCH', body),
-  delete: <T>(path: string) => mutate<T>(`/api/proxy${path}`, 'DELETE'),
+export const api: ApiClient = {
+  get: <T>(path: string): Promise<T> => request<T>(path),
+  post: <T>(path: string, body: unknown): Promise<T> => request<T>(path, { method: 'POST', body }),
+  patch: <T>(path: string, body: unknown): Promise<T> => request<T>(path, { method: 'PATCH', body }),
+  delete: <T>(path: string): Promise<T> => request<T>(path, { method: 'DELETE' }),
 };
+
+// src/lib/api-client.ts -- authenticate() encapsulates login-then-signup logic
+export async function authenticate(email: string): Promise<void>;
 ```
 
 ### Adding New Frontend Services
@@ -1481,7 +1504,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Assets service scaffolding: S3 client, domain types, DTOs, repository stubs
 - [x] Quality checks script (`check.sh`): biome check, tsc, fmt, clippy, test
 - [x] Production Dockerfile (multi-stage build)
-- [x] Turnkey crate: create sub-org, create delegated account user, passkey auth, request stamping
+- [x] Turnkey integration: official SDK (`turnkey_client` + `turnkey_api_key_stamper`) used directly by wallets service (replaces custom wrapper crate)
 - [x] Wallets service: scaffold, `wallets` schema migrations, org wallet + person sub-org + person app wallet internal APIs
 - [x] Auth service: session JWT utilities, `RequireSession` middleware, auth code migration
 - [x] Auth service: `GET /me`, `PATCH /me` endpoints (protected by RequireSession middleware)
@@ -1499,6 +1522,16 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Capability token minting on new org creation (best-effort mint via wallets service `/internal/sign`)
 - [x] Crate convention: shared crates accept config structs, never read environment variables directly
 - [x] Frontend: Dashboard login page, dashboard shell, org overview page
+- [x] Frontend: Code quality audit -- all 9 sections pass clean (TypeScript strictness, React correctness, API proxy security, session hardening, security, component architecture, Biome, App Router, workspace hygiene)
+- [x] Frontend: `lib/config.ts` centralizes all `process.env` access with validation
+- [x] Frontend: `lib/schemas.ts` shared Zod schemas for auth response validation
+- [x] Frontend: API proxy reads iron-session, strips cookies, attaches `X-Person-Id`
+- [x] Frontend: Auth routes validate request/response bodies with Zod, no Set-Cookie forwarding
+- [x] Frontend: `skipLibCheck: false` with `@types/cookie` for full type checking
+- [x] Frontend: `loading.tsx`, `error.tsx` boundaries for all route segments
+- [x] Frontend: Metadata exports on all public pages
+- [x] Frontend: All exported functions have explicit return types
+- [x] Frontend: `useForm` from `@mantine/form` for login form validation
 
 ### Phase 2 -- App Registrations & Contracts
 
@@ -1647,12 +1680,9 @@ EXCLUDE_SERVICES=gateway,db
 
 # ---- Frontend: Dashboard (ts/services/dashboard) ----
 
-NEXT_PUBLIC_TURNKEY_ORG_ID=...
-NEXT_PUBLIC_AUTH_BASE_URL=https://auth.evmauth.io
-
 # Server-side only (not NEXT_PUBLIC_)
-BACKEND_URL=http://gateway:8000
-SESSION_SECRET=...
+BACKEND_URL=http://gateway:8000      # Internal gateway URL (never exposed to browser)
+SESSION_SECRET=...                    # 32+ chars, required (no hardcoded fallback)
 ```
 
 ---
@@ -1663,8 +1693,8 @@ SESSION_SECRET=...
 - Always run `sqlx prepare` after changing queries to keep the offline query cache (`.sqlx/`) in sync. Use `tilt trigger sqlx-prepare` in local dev.
 - Use `sqlx::query_as!` macros for all DB queries -- no string-interpolated SQL.
 - The `evm` crate should be integration-tested against a local Anvil fork of Radius, not a mock. Add an Anvil service to docker-compose for tests.
-- Turnkey API calls should be wrapped in retry logic with exponential backoff (3 attempts). Use `tower`'s retry layer or implement manually in the Turnkey client.
-- The platform operator wallet is a Turnkey-managed wallet within the parent org. All signing goes through the Turnkey client via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/sign` endpoint. No raw private keys in any environment variable.
+- Turnkey API calls use the official `turnkey_client` SDK which handles retry logic internally via `RetryConfig` (exponential backoff, default 5 attempts). Do not add custom retry wrappers.
+- The platform operator wallet is a Turnkey-managed wallet within the parent org. All signing goes through the Turnkey SDK via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/sign` endpoint. No raw private keys in any environment variable.
 - All contract addresses, tx hashes, and wallet addresses are stored as `TEXT` in Postgres (not `BYTEA`), EIP-55 checksummed format. Normalise on insert.
 - The `/auth/end-user/login` page must validate `redirect_uri` against `callback_urls` **before** initiating the OAuth flow -- never after -- to prevent open redirect attacks. Auth service calls registry internal API to validate.
 - Authorization codes in `auth.auth_codes` are stored as `SHA-256(plaintext_code)`. The plaintext is returned once in the redirect and never stored. On token exchange, hash the submitted code and look it up -- never store or log the plaintext code.

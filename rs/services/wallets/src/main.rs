@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use wallets::{AppState, api, config};
 
 #[tokio::main]
@@ -19,8 +20,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis = redis_client::create_client(&config.redis.connection_string()).await?;
     tracing::info!("Redis connection established");
 
-    // Create Turnkey client
-    let turnkey = turnkey::TurnkeyClient::new(config.turnkey)?;
+    // Create Turnkey client using official SDK
+    let api_key = TurnkeyP256ApiKey::from_strings(
+        &config.turnkey.api_private_key,
+        Some(&config.turnkey.api_public_key),
+    )?;
+    let turnkey = turnkey_client::TurnkeyClient::builder()
+        .api_key(api_key)
+        .base_url(&config.turnkey.api_base_url)
+        .build()?;
     tracing::info!("Turnkey client initialized");
 
     // Create EVM client
@@ -32,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         db,
         redis,
         turnkey: Arc::new(turnkey),
+        turnkey_parent_org_id: config.turnkey.parent_org_id,
         evm: Arc::new(evm_client),
     };
 

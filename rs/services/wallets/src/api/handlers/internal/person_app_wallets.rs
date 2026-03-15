@@ -6,6 +6,11 @@ use axum::{
 };
 use uuid::Uuid;
 
+use turnkey_client::generated::immutable::activity::v1::{
+    CreateWalletAccountsIntent, WalletAccountParams,
+};
+use turnkey_client::generated::immutable::common::v1::{AddressFormat, Curve, PathFormat};
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::request::CreatePersonAppWallet;
@@ -16,8 +21,6 @@ use crate::repository::person_app_wallet::{
 use crate::repository::person_turnkey_ref::{
     PersonTurnkeyRefRepository, PersonTurnkeyRefRepositoryImpl,
 };
-
-use turnkey::sub_org::CreateWalletAccount;
 
 /// Create an HD wallet account for a (person, app) pair
 ///
@@ -46,23 +49,36 @@ pub async fn create_person_app_wallet(
         .await?
         .ok_or_else(|| {
             ApiError::BadRequest(format!(
-                "Person {} does not have a Turnkey sub-org. Create one first.",
+                "person {} does not have a Turnkey sub-org",
                 create.person_id,
             ))
         })?;
 
     // Step 2: Create a wallet account in the person's sub-org
-    // The wallet_id is derived from the sub-org (first wallet created during sub-org setup)
-    // For now, we use a convention-based wallet ID lookup
-    let account_response = state
+    let account_result = state
         .turnkey
-        .create_wallet_account(CreateWalletAccount {
-            sub_org_id: turnkey_ref.turnkey_sub_org_id.clone(),
-            // The wallet ID would come from the sub-org's primary wallet
-            // This assumes a convention where the wallet was created with the sub-org
-            wallet_id: format!("wallet-{}", turnkey_ref.turnkey_sub_org_id),
-        })
+        .create_wallet_accounts(
+            turnkey_ref.turnkey_sub_org_id.clone(),
+            state.turnkey.current_timestamp(),
+            CreateWalletAccountsIntent {
+                wallet_id: format!("wallet-{}", turnkey_ref.turnkey_sub_org_id),
+                accounts: vec![WalletAccountParams {
+                    curve: Curve::Secp256k1,
+                    path_format: PathFormat::Bip32,
+                    path: "m/44'/60'/0'/0/0".to_string(),
+                    address_format: AddressFormat::Ethereum,
+                }],
+                persist: None,
+            },
+        )
         .await?;
+
+    let address = account_result
+        .result
+        .addresses
+        .first()
+        .ok_or_else(|| ApiError::Internal("no address returned from turnkey".to_string()))?
+        .clone();
 
     // Step 3: Store in database
     let wallet_repo = PersonAppWalletRepositoryImpl::new(&state.db);
@@ -70,8 +86,8 @@ pub async fn create_person_app_wallet(
         .create(
             create.person_id,
             create.app_registration_id,
-            &account_response.address,
-            &account_response.account_id,
+            &address,
+            "", // account_id not returned by create_wallet_accounts
         )
         .await?;
 

@@ -6,7 +6,7 @@ EVMAuth is a microservices platform built with Rust. The architecture consists o
 
 ## Technology Stack
 
-- **Language**: Rust (Edition 2021, MSRV 1.88)
+- **Language**: Rust (Edition 2024, MSRV 1.88)
 - **Web Framework**: Axum 0.8 with Tower-HTTP
 - **Async Runtime**: Tokio
 - **Database**: PostgreSQL with pgvector extension
@@ -21,11 +21,14 @@ EVMAuth is a microservices platform built with Rust. The architecture consists o
 rs/
 ├── services/          # Microservices
 │   ├── auth/          # Authentication/user management
+│   ├── wallets/       # Wallet lifecycle & Turnkey management (uses official SDK)
+│   ├── registry/      # App registrations, contracts, accounts query
 │   ├── gateway/       # API gateway (entry point)
 │   ├── db/            # Database migrations
 │   ├── docs/          # OpenAPI aggregation
 │   └── assets/        # User uploaded file management
 ├── crates/            # Shared libraries
+│   ├── evm/           # Alloy-based EVM interaction
 │   ├── pagination/
 │   ├── pagination-macros/
 │   ├── postgres/

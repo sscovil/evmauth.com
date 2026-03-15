@@ -7,6 +7,8 @@ use axum::{
 use serde_json::json;
 use uuid::Uuid;
 
+use subtle::ConstantTimeEq;
+
 use crate::api::error::ApiError;
 use crate::domain::OrgVisibility;
 use crate::dto::request::CreatePerson;
@@ -370,8 +372,15 @@ pub async fn login(
 
     let person = people.first().ok_or(ApiError::NotFound)?;
 
-    // Verify auth provider ref matches
-    if person.auth_provider_ref != body.auth_provider_ref {
+    // Verify auth provider ref matches (constant-time to prevent timing attacks)
+    if person
+        .auth_provider_ref
+        .as_bytes()
+        .ct_eq(body.auth_provider_ref.as_bytes())
+        .into()
+    {
+        // match -- fall through
+    } else {
         return Err(ApiError::BadRequest("Invalid credentials".to_string()));
     }
 

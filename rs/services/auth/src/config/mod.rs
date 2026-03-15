@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::env;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
@@ -9,6 +9,25 @@ pub struct Config {
     pub jwt_public_key_pem: Option<String>,
     pub wallets_service_url: String,
     pub evm: evm::EvmConfig,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("pg", &self.pg)
+            .field("redis", &self.redis)
+            .field(
+                "jwt_private_key_pem",
+                &self.jwt_private_key_pem.as_ref().map(|_| "[redacted]"),
+            )
+            .field(
+                "jwt_public_key_pem",
+                &self.jwt_public_key_pem.as_ref().map(|_| "[redacted]"),
+            )
+            .field("wallets_service_url", &self.wallets_service_url)
+            .field("evm", &self.evm)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -6,13 +6,20 @@ use axum::{
 };
 use uuid::Uuid;
 
+use turnkey_client::generated::immutable::activity::api::ApiKeyParams as SdkApiKeyParams;
+use turnkey_client::generated::immutable::activity::v1::{
+    ApiKeyParamsV2, CreateApiOnlyUsersIntent, CreateSubOrganizationIntentV7, CreateWalletIntent,
+    WalletAccountParams,
+};
+use turnkey_client::generated::immutable::common::v1::{
+    AddressFormat, ApiKeyCurve, Curve, PathFormat,
+};
+
 use crate::AppState;
 use crate::api::error::ApiError;
 use crate::dto::request::CreateOrgWallet;
 use crate::dto::response::OrgWalletResponse;
 use crate::repository::org_wallet::{OrgWalletRepository, OrgWalletRepositoryImpl};
-
-use turnkey::sub_org::{ApiKeyParams, CreateDelegatedAccount, CreateSubOrg, CreateWallet};
 
 /// Create an org wallet with Turnkey sub-org and optional delegated account
 ///
@@ -34,48 +41,80 @@ pub async fn create_org_wallet(
     Json(create): Json<CreateOrgWallet>,
 ) -> Result<impl IntoResponse, ApiError> {
     // Step 1: Create Turnkey sub-org
-    let sub_org_response = state
+    let sub_org_result = state
         .turnkey
-        .create_sub_org(CreateSubOrg {
-            name: create.sub_org_name,
-            root_users: vec![],
-        })
+        .create_sub_organization(
+            state.turnkey_parent_org_id.clone(),
+            state.turnkey.current_timestamp(),
+            CreateSubOrganizationIntentV7 {
+                sub_organization_name: create.sub_org_name,
+                root_users: vec![],
+                root_quorum_threshold: 1,
+                wallet: None,
+                disable_email_recovery: None,
+                disable_email_auth: None,
+                disable_sms_auth: None,
+                disable_otp_email_auth: None,
+                verification_token: None,
+                client_signature: None,
+            },
+        )
         .await?;
 
-    let sub_org_id = &sub_org_response.sub_organization_id;
+    let sub_org_id = &sub_org_result.result.sub_organization_id;
 
     // Step 2: Create wallet in the sub-org
-    let wallet_response = state
+    let wallet_result = state
         .turnkey
-        .create_wallet(CreateWallet {
-            sub_org_id: sub_org_id.clone(),
-            wallet_name: format!("org-wallet-{}", create.org_id),
-            accounts: 1,
-        })
+        .create_wallet(
+            sub_org_id.clone(),
+            state.turnkey.current_timestamp(),
+            CreateWalletIntent {
+                wallet_name: format!("org-wallet-{}", create.org_id),
+                accounts: vec![WalletAccountParams {
+                    curve: Curve::Secp256k1,
+                    path_format: PathFormat::Bip32,
+                    path: "m/44'/60'/0'/0/0".to_string(),
+                    address_format: AddressFormat::Ethereum,
+                }],
+                mnemonic_length: None,
+            },
+        )
         .await?;
 
-    let wallet_address = wallet_response
+    let wallet_address = wallet_result
+        .result
         .addresses
         .first()
-        .ok_or_else(|| ApiError::Internal("No wallet address returned from Turnkey".to_string()))?
+        .ok_or_else(|| ApiError::Internal("no wallet address returned from turnkey".to_string()))?
         .clone();
 
     // Step 3: Optionally create a delegated account
     let delegated_user_id = match (create.delegated_user_name, create.delegated_api_public_key) {
         (Some(user_name), Some(public_key)) => {
-            let delegated_response = state
+            let delegated_result = state
                 .turnkey
-                .create_delegated_account(CreateDelegatedAccount {
-                    sub_org_id: sub_org_id.clone(),
-                    user_name,
-                    api_key: ApiKeyParams {
-                        api_key_name: "delegated-key".to_string(),
-                        public_key,
+                .create_api_only_users(
+                    sub_org_id.clone(),
+                    state.turnkey.current_timestamp(),
+                    CreateApiOnlyUsersIntent {
+                        api_only_users: vec![
+                            turnkey_client::generated::immutable::activity::v1::ApiOnlyUserParams {
+                                user_name,
+                                user_email: None,
+                                user_tags: vec!["delegated-signing".to_string()],
+                                api_keys: vec![SdkApiKeyParams {
+                                    api_key_name: "delegated-key".to_string(),
+                                    public_key,
+                                    expiration_seconds: None,
+                                }],
+                            },
+                        ],
                     },
-                })
+                )
                 .await?;
 
-            Some(delegated_response.user_id)
+            delegated_result.result.user_ids.into_iter().next()
         }
         _ => None,
     };

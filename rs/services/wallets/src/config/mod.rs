@@ -6,7 +6,7 @@ use alloy::primitives::Address;
 pub struct Config {
     pub pg: DatabaseConfig,
     pub redis: redis_client::RedisConfig,
-    pub turnkey: turnkey::client::TurnkeyConfig,
+    pub turnkey: TurnkeyConfig,
     pub evm: evm::EvmConfig,
 }
 
@@ -17,6 +17,26 @@ impl std::fmt::Debug for Config {
             .field("redis", &self.redis)
             .field("turnkey", &self.turnkey)
             .field("evm", &self.evm)
+            .finish()
+    }
+}
+
+/// Turnkey API configuration
+#[derive(Clone)]
+pub struct TurnkeyConfig {
+    pub api_base_url: String,
+    pub parent_org_id: String,
+    pub api_public_key: String,
+    pub api_private_key: String,
+}
+
+impl std::fmt::Debug for TurnkeyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TurnkeyConfig")
+            .field("api_base_url", &self.api_base_url)
+            .field("parent_org_id", &self.parent_org_id)
+            .field("api_public_key", &"[redacted]")
+            .field("api_private_key", &"[redacted]")
             .finish()
     }
 }
@@ -68,7 +88,7 @@ impl Config {
                     .unwrap_or(6379),
                 password: env::var("REDIS_PASSWORD").ok(),
             },
-            turnkey: turnkey::client::TurnkeyConfig {
+            turnkey: TurnkeyConfig {
                 api_base_url: env::var("TURNKEY_API_BASE_URL")?,
                 parent_org_id: env::var("TURNKEY_PARENT_ORG_ID")?,
                 api_public_key: env::var("TURNKEY_API_PUBLIC_KEY")?,

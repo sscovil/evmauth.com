@@ -68,17 +68,16 @@ impl From<evm::EvmError> for ApiError {
     }
 }
 
-impl From<turnkey::TurnkeyError> for ApiError {
-    fn from(err: turnkey::TurnkeyError) -> Self {
-        tracing::error!("Turnkey API error: {:?}", err);
-        match err {
-            turnkey::TurnkeyError::Config(msg) => {
-                ApiError::Internal(format!("Turnkey configuration error: {msg}"))
-            }
-            turnkey::TurnkeyError::Api { status, message } => {
-                ApiError::Internal(format!("Turnkey API error ({status}): {message}"))
-            }
-            _ => ApiError::Internal("Turnkey operation failed".to_string()),
-        }
+impl From<turnkey_client::TurnkeyClientError> for ApiError {
+    fn from(err: turnkey_client::TurnkeyClientError) -> Self {
+        tracing::error!("Turnkey error: {:?}", err);
+        ApiError::Internal(format!("turnkey operation failed: {err}"))
+    }
+}
+
+impl From<turnkey_api_key_stamper::StamperError> for ApiError {
+    fn from(err: turnkey_api_key_stamper::StamperError) -> Self {
+        tracing::error!("Turnkey stamper error: {:?}", err);
+        ApiError::Internal(format!("turnkey stamper error: {err}"))
     }
 }
