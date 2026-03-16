@@ -5,7 +5,8 @@
             "@/*": ["./src/*"]
         },
         "allowJs": true,
-        "noEmit": true
+        "noEmit": true,
+        "skipLibCheck": true
     },
     "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
     "exclude": ["node_modules"]

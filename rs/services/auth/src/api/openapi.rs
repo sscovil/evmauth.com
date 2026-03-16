@@ -2,7 +2,7 @@ use pagination::PaginatedResponse;
 use utoipa::OpenApi;
 
 use crate::api::handlers::auth::{LoginRequest, PasskeyAttestation, SignupRequest, TokenResponse};
-use crate::api::handlers::me::UpdateMeRequest;
+use crate::api::handlers::me::{CreateAuthenticatorRequest, UpdateMeRequest};
 use crate::domain::OrgVisibility;
 use crate::dto::request::{
     CreateOrg, CreateOrgMember, CreatePerson, UpdateOrg, UpdateOrgMember, UpdatePerson,
@@ -27,6 +27,7 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
         // Me
         crate::api::handlers::me::get_me,
         crate::api::handlers::me::update_me,
+        crate::api::handlers::me::create_authenticator,
         // People
         crate::api::handlers::people::list_people,
         crate::api::handlers::people::get_person,
@@ -53,6 +54,7 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
             TokenResponse,
             PasskeyAttestation,
             UpdateMeRequest,
+            CreateAuthenticatorRequest,
             // Request DTOs
             CreatePerson,
             UpdatePerson,

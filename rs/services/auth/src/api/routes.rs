@@ -6,7 +6,9 @@ use utoipa::OpenApi;
 
 use crate::AppState;
 
-use super::handlers::{auth as auth_handlers, health, me, org_members, orgs, people};
+use super::handlers::{
+    auth as auth_handlers, end_user, health, jwks, me, org_members, orgs, people,
+};
 
 #[cfg(feature = "internal-api")]
 use super::handlers::internal;
@@ -33,6 +35,14 @@ pub fn api_routes(state: AppState) -> Router<AppState> {
         .route("/auth/signup", post(auth_handlers::signup))
         .route("/auth/login", post(auth_handlers::login))
         .route("/auth/logout", post(auth_handlers::logout))
+        // End-user auth routes (OAuth/PKCE flow)
+        .route(
+            "/auth/end-user/authorize",
+            get(end_user::authorize).post(end_user::authenticate),
+        )
+        .route("/auth/end-user/token", post(end_user::token_exchange))
+        // JWKS
+        .route("/.well-known/jwks.json", get(jwks::jwks))
         // People routes
         .route(
             "/people",
@@ -70,6 +80,13 @@ pub fn api_routes(state: AppState) -> Router<AppState> {
                     state.clone(),
                     crate::middleware::require_session,
                 )),
+        )
+        .route(
+            "/me/authenticators",
+            post(me::create_authenticator).route_layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                crate::middleware::require_session,
+            )),
         );
 
     // Conditionally add internal routes with /internal prefix

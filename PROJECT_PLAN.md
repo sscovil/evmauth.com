@@ -1636,15 +1636,15 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 
 ### Phase 3 -- End User Auth
 
-- [ ] Hosted auth UI (`/auth/end-user/login`) with `client_id` / `redirect_uri` / PKCE parameter validation (auth calls registry internal API)
-- [ ] End user sub-org creation on first login (auth calls wallets internal API)
-- [ ] HD wallet account creation per (person, app_registration) via wallets service
-- [ ] Authorization code generation, storage (hashed in Redis with TTL), and issuance
-- [ ] PKCE token exchange endpoint with code_verifier validation, single-use enforcement (Redis DEL), and expiry check
-- [ ] End-user app JWT issuance (auth calls wallets internal API for wallet address)
-- [ ] JWKS endpoint (`GET /auth/.well-known/jwks.json`)
-- [ ] End-user wallet self-service page (frontend calls wallets service via gateway)
-- [ ] Passkey backup authenticator prompt on first login
+- [x] Hosted auth UI (`/auth/end-user/login`) with `client_id` / `redirect_uri` / PKCE parameter validation (auth calls registry internal API)
+- [x] End user sub-org creation on first login (auth calls wallets internal API)
+- [x] HD wallet account creation per (person, app_registration) via wallets service
+- [x] Authorization code generation, storage (hashed in Redis with TTL), and issuance
+- [x] PKCE token exchange endpoint with code_verifier validation, single-use enforcement (Redis DEL), and expiry check
+- [x] End-user app JWT issuance (auth calls wallets internal API for wallet address)
+- [x] JWKS endpoint (`GET /auth/.well-known/jwks.json`)
+- [x] End-user wallet self-service page (frontend calls wallets service via gateway)
+- [ ] Passkey backup authenticator prompt on first login (deferred -- requires @turnkey/sdk-browser integration)
 
 ### Phase 4 -- Authorization Query API
 
