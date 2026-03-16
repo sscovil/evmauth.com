@@ -1632,7 +1632,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Update app registration creation to trigger entity app wallet derivation
 - [x] Update contract deployment to use org's entity app wallet as EVMAuth default admin
 - [x] Internal CLI tool (`evmauth-cli`) for beacon and platform contract deployment
-- [ ] Console: App registration pages, contract deployment wizard, role grant management UI
+- [x] Console: App registration pages, contract deployment wizard, role grant management UI
 
 ### Phase 3 -- End User Auth
 
