@@ -8,14 +8,14 @@ use turnkey_client::generated::immutable::common::v1::{HashFunction, PayloadEnco
 
 use crate::AppState;
 use crate::api::error::ApiError;
-use crate::repository::org_wallet::{OrgWalletRepository, OrgWalletRepositoryImpl};
+use crate::repository::entity_wallet::{EntityWalletRepository, EntityWalletRepositoryImpl};
 
 /// Request to sign a payload via delegated account
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SignRequest {
-    /// The organization ID whose delegated account should sign
+    /// The entity ID whose delegated account should sign
     #[schema(example = "550e8400-e29b-41d4-a716-446655440000", format = "uuid")]
-    pub org_id: Uuid,
+    pub entity_id: Uuid,
 
     /// The payload to sign (hex-encoded)
     #[schema(example = "0xdeadbeef", format = "string")]
@@ -43,7 +43,7 @@ pub struct SignResponse {
 
 /// Sign a payload via a delegated account
 ///
-/// Looks up the org's delegated account and signs the given payload
+/// Looks up the entity's delegated account and signs the given payload
 /// using the Turnkey API.
 #[utoipa::path(
     post,
@@ -52,7 +52,7 @@ pub struct SignResponse {
     responses(
         (status = 200, description = "Payload signed successfully", body = SignResponse),
         (status = 400, description = "Bad request"),
-        (status = 404, description = "Org wallet or delegated account not found"),
+        (status = 404, description = "Entity wallet or delegated account not found"),
         (status = 500, description = "Internal server error")
     ),
     tag = "internal/signing"
@@ -61,16 +61,16 @@ pub async fn sign_payload(
     State(state): State<AppState>,
     Json(request): Json<SignRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let repo = OrgWalletRepositoryImpl::new(&state.db);
-    let org_wallet = repo
-        .get_by_org_id(request.org_id)
+    let repo = EntityWalletRepositoryImpl::new(&state.db);
+    let entity_wallet = repo
+        .get_by_entity_id(request.entity_id)
         .await?
         .ok_or(ApiError::NotFound)?;
 
-    let delegated_user_id = org_wallet.turnkey_delegated_user_id.ok_or_else(|| {
+    let delegated_user_id = entity_wallet.turnkey_delegated_user_id.ok_or_else(|| {
         ApiError::BadRequest(format!(
-            "organization {} does not have a delegated signing account",
-            request.org_id,
+            "entity {} does not have a delegated signing account",
+            request.entity_id,
         ))
     })?;
 
@@ -98,7 +98,7 @@ pub async fn sign_payload(
     let result = state
         .turnkey
         .sign_raw_payload(
-            org_wallet.turnkey_sub_org_id.into_inner(),
+            entity_wallet.turnkey_sub_org_id.into_inner(),
             state.turnkey.current_timestamp(),
             SignRawPayloadIntentV2 {
                 sign_with: delegated_user_id,

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -14,6 +16,8 @@ use crate::dto::response::AppRegistrationResponse;
 use crate::repository::app_registration::{
     AppRegistrationRepository, AppRegistrationRepositoryImpl,
 };
+
+const WALLETS_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[utoipa::path(
     post,
@@ -42,6 +46,59 @@ pub async fn create_app_registration(
     let reg = repo
         .create(org_id, &body.name, &callback_urls, &relevant_token_ids)
         .await?;
+
+    // Derive entity app wallet for this (org, app) pair
+    let wallets_url = &state.config.wallets_service_url;
+    let derive_request = serde_json::json!({
+        "entity_id": org_id,
+        "app_registration_id": reg.id,
+    });
+
+    let derive_result = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .post(format!("{wallets_url}/internal/entity-app-wallet"))
+            .json(&derive_request)
+            .send()
+            .await
+    })
+    .await;
+
+    match derive_result {
+        Ok(Ok(resp)) if resp.status().is_success() => {
+            tracing::info!(
+                org_id = %org_id,
+                app_id = %reg.id,
+                "Entity app wallet derived for app registration"
+            );
+        }
+        Ok(Ok(resp)) => {
+            let status = resp.status();
+            let error_body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            tracing::warn!(
+                org_id = %org_id,
+                app_id = %reg.id,
+                "Entity app wallet derivation failed: {status} {error_body}"
+            );
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(
+                org_id = %org_id,
+                app_id = %reg.id,
+                "Entity app wallet derivation request failed: {e}"
+            );
+        }
+        Err(_) => {
+            tracing::warn!(
+                org_id = %org_id,
+                app_id = %reg.id,
+                "Entity app wallet derivation timed out"
+            );
+        }
+    }
 
     let response: AppRegistrationResponse = reg.into();
     Ok((StatusCode::CREATED, Json(response)))

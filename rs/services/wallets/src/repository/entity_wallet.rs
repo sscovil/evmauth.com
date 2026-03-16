@@ -3,52 +3,58 @@ use sqlx::PgPool;
 use types::{ChecksumAddress, TurnkeySubOrgId};
 use uuid::Uuid;
 
-use crate::domain::OrgWallet;
+use crate::domain::EntityWallet;
 
 use super::error::RepositoryError;
 
 #[async_trait]
-pub trait OrgWalletRepository: Send + Sync {
+pub trait EntityWalletRepository: Send + Sync {
     async fn create(
         &self,
-        org_id: Uuid,
+        entity_id: Uuid,
         turnkey_sub_org_id: &TurnkeySubOrgId,
+        turnkey_wallet_id: &str,
         wallet_address: &ChecksumAddress,
         turnkey_delegated_user_id: Option<&str>,
-    ) -> Result<OrgWallet, RepositoryError>;
-    async fn get(&self, id: Uuid) -> Result<Option<OrgWallet>, RepositoryError>;
-    async fn get_by_org_id(&self, org_id: Uuid) -> Result<Option<OrgWallet>, RepositoryError>;
+    ) -> Result<EntityWallet, RepositoryError>;
+    async fn get(&self, id: Uuid) -> Result<Option<EntityWallet>, RepositoryError>;
+    async fn get_by_entity_id(
+        &self,
+        entity_id: Uuid,
+    ) -> Result<Option<EntityWallet>, RepositoryError>;
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
 }
 
-pub struct OrgWalletRepositoryImpl<'a> {
+pub struct EntityWalletRepositoryImpl<'a> {
     pool: &'a PgPool,
 }
 
-impl<'a> OrgWalletRepositoryImpl<'a> {
+impl<'a> EntityWalletRepositoryImpl<'a> {
     pub fn new(pool: &'a PgPool) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait]
-impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
+impl<'a> EntityWalletRepository for EntityWalletRepositoryImpl<'a> {
     async fn create(
         &self,
-        org_id: Uuid,
+        entity_id: Uuid,
         turnkey_sub_org_id: &TurnkeySubOrgId,
+        turnkey_wallet_id: &str,
         wallet_address: &ChecksumAddress,
         turnkey_delegated_user_id: Option<&str>,
-    ) -> Result<OrgWallet, RepositoryError> {
+    ) -> Result<EntityWallet, RepositoryError> {
         let result = sqlx::query_as!(
-            OrgWallet,
+            EntityWallet,
             r#"
-            INSERT INTO wallets.org_wallets (org_id, turnkey_sub_org_id, wallet_address, turnkey_delegated_user_id)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, org_id, turnkey_sub_org_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
+            INSERT INTO wallets.entity_wallets (entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
             "#,
-            org_id,
+            entity_id,
             turnkey_sub_org_id.as_str(),
+            turnkey_wallet_id,
             wallet_address.as_str(),
             turnkey_delegated_user_id
         )
@@ -59,7 +65,7 @@ impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
                 && db_err.is_unique_violation()
             {
                 return RepositoryError::ConstraintViolation(
-                    "Org wallet already exists for this organization".to_string(),
+                    "Entity wallet already exists for this entity".to_string(),
                 );
             }
             RepositoryError::Database(e)
@@ -68,12 +74,12 @@ impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
         Ok(result)
     }
 
-    async fn get(&self, id: Uuid) -> Result<Option<OrgWallet>, RepositoryError> {
+    async fn get(&self, id: Uuid) -> Result<Option<EntityWallet>, RepositoryError> {
         let wallet = sqlx::query_as!(
-            OrgWallet,
+            EntityWallet,
             r#"
-            SELECT id, org_id, turnkey_sub_org_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
-            FROM wallets.org_wallets
+            SELECT id, entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
+            FROM wallets.entity_wallets
             WHERE id = $1
             "#,
             id
@@ -84,15 +90,18 @@ impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
         Ok(wallet)
     }
 
-    async fn get_by_org_id(&self, org_id: Uuid) -> Result<Option<OrgWallet>, RepositoryError> {
+    async fn get_by_entity_id(
+        &self,
+        entity_id: Uuid,
+    ) -> Result<Option<EntityWallet>, RepositoryError> {
         let wallet = sqlx::query_as!(
-            OrgWallet,
+            EntityWallet,
             r#"
-            SELECT id, org_id, turnkey_sub_org_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
-            FROM wallets.org_wallets
-            WHERE org_id = $1
+            SELECT id, entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
+            FROM wallets.entity_wallets
+            WHERE entity_id = $1
             "#,
-            org_id
+            entity_id
         )
         .fetch_optional(self.pool)
         .await?;
@@ -103,7 +112,7 @@ impl<'a> OrgWalletRepository for OrgWalletRepositoryImpl<'a> {
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError> {
         let result = sqlx::query!(
             r#"
-            DELETE FROM wallets.org_wallets
+            DELETE FROM wallets.entity_wallets
             WHERE id = $1
             "#,
             id

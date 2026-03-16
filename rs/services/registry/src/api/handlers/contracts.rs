@@ -23,17 +23,17 @@ use crate::repository::contract::{
 };
 use crate::repository::role_grant::{RoleGrantRepository, RoleGrantRepositoryImpl};
 
-/// Response from wallets internal org-wallet endpoint.
-/// Used to verify an org has a provisioned wallet and to get the wallet address.
+/// Response from wallets internal entity-app-wallet endpoint.
+/// Used to look up the org's app-specific wallet for use as EVMAuth default admin.
 #[derive(Debug, Deserialize)]
-struct OrgWalletResponse {
+struct EntityAppWalletResponse {
     wallet_address: ChecksumAddress,
 }
 
 /// Request body for wallets internal send-tx endpoint
 #[derive(Debug, serde::Serialize)]
 struct SendTxRequest {
-    org_id: Uuid,
+    entity_id: Uuid,
     to: Option<ChecksumAddress>,
     calldata: String,
 }
@@ -83,43 +83,55 @@ pub async fn deploy_contract(
 ) -> Result<impl IntoResponse, ApiError> {
     let wallets_url = &state.config.wallets_service_url;
 
-    // Step 1: Look up org wallet address
-    // This serves as both validation and provides the address for initialDefaultAdmin
-    let org_wallet: OrgWalletResponse = tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
-        state
-            .http_client
-            .get(format!("{wallets_url}/internal/org-wallet/{org_id}"))
-            .send()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
-            .error_for_status()
-            .map_err(|e| {
-                if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                    ApiError::BadRequest(format!("no wallet found for organization {org_id}"))
-                } else {
-                    ApiError::Internal(format!("wallets service error: {e}"))
-                }
-            })?
-            .json()
-            .await
-            .map_err(|e| ApiError::Internal(format!("failed to parse wallets response: {e}")))
-    })
-    .await
-    .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
+    // Contract deployment requires an app registration to derive the admin wallet
+    let app_registration_id = body.app_registration_id.ok_or_else(|| {
+        ApiError::BadRequest("app_registration_id is required for contract deployment".to_string())
+    })?;
+
+    // Step 1: Look up the org's entity app wallet for this app registration
+    // This derived address becomes the EVMAuth default admin for the proxy contract
+    let app_wallet: EntityAppWalletResponse =
+        tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
+            state
+                .http_client
+                .get(format!(
+                    "{wallets_url}/internal/entity-app-wallet/{org_id}/{app_registration_id}",
+                ))
+                .send()
+                .await
+                .map_err(|e| ApiError::Internal(format!("failed to reach wallets service: {e}")))?
+                .error_for_status()
+                .map_err(|e| {
+                    if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                        ApiError::BadRequest(format!(
+                            "no app wallet found for organization {org_id} and app {app_registration_id}",
+                        ))
+                    } else {
+                        ApiError::Internal(format!("wallets service error: {e}"))
+                    }
+                })?
+                .json()
+                .await
+                .map_err(|e| {
+                    ApiError::Internal(format!("failed to parse wallets response: {e}"))
+                })
+        })
+        .await
+        .map_err(|_| ApiError::Internal("wallets service request timed out".to_string()))??;
 
     // Step 2: Encode BeaconProxy deployment bytecode with initialize() calldata
     let beacon_address = state.evm.platform_contract_address();
     let platform_operator = state.evm.platform_operator_address();
 
-    // Parse the org wallet address for use as initialDefaultAdmin and initialTreasury
-    let org_wallet_addr: evm::Address = org_wallet
+    // Parse the org's app-specific wallet address for use as initialDefaultAdmin and initialTreasury
+    let app_wallet_addr: evm::Address = app_wallet
         .wallet_address
         .as_str()
         .parse()
-        .map_err(|e| ApiError::Internal(format!("invalid org wallet address: {e}")))?;
+        .map_err(|e| ApiError::Internal(format!("invalid app wallet address: {e}")))?;
 
     let init_data =
-        evm::EvmClient::encode_initialize(org_wallet_addr, org_wallet_addr, platform_operator, "");
+        evm::EvmClient::encode_initialize(app_wallet_addr, app_wallet_addr, platform_operator, "");
 
     let deploy_bytecode = evm::encode_beacon_proxy_deploy(beacon_address, init_data)?;
     let calldata_hex = format!("0x{}", alloy::hex::encode(&deploy_bytecode));
@@ -128,7 +140,7 @@ pub async fn deploy_contract(
     let send_tx_response = send_tx_via_wallets(
         &state,
         &SendTxRequest {
-            org_id,
+            entity_id: org_id,
             to: None,
             calldata: calldata_hex,
         },
@@ -148,7 +160,7 @@ pub async fn deploy_contract(
     let contract = repo
         .create(CreateContractParams {
             org_id,
-            app_registration_id: body.app_registration_id,
+            app_registration_id: Some(app_registration_id),
             name: body.name,
             address: contract_address,
             chain_id,
@@ -279,7 +291,7 @@ pub async fn create_role_grant(
     let send_tx_response = send_tx_via_wallets(
         &state,
         &SendTxRequest {
-            org_id,
+            entity_id: org_id,
             to: Some(contract.address.clone()),
             calldata: calldata_hex,
         },
@@ -355,7 +367,7 @@ pub async fn delete_role_grant(
     let send_tx_response = send_tx_via_wallets(
         &state,
         &SendTxRequest {
-            org_id,
+            entity_id: org_id,
             to: Some(contract.address.clone()),
             calldata: calldata_hex,
         },

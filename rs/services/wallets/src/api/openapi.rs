@@ -1,7 +1,7 @@
 use utoipa::OpenApi;
 
-use crate::dto::request::{CreateOrgWallet, CreatePersonAppWallet, CreatePersonTurnkeyRef};
-use crate::dto::response::{OrgWalletResponse, PersonAppWalletResponse};
+use crate::dto::request::{CreateEntityAppWallet, CreateEntityWallet};
+use crate::dto::response::{EntityAppWalletResponse, EntityWalletResponse};
 
 /// OpenAPI documentation for the Wallets Service (public endpoints only)
 #[derive(OpenApi)]
@@ -14,27 +14,26 @@ use crate::dto::response::{OrgWalletResponse, PersonAppWalletResponse};
     paths(
         // Health
         crate::api::handlers::health::health_check,
-        // Org wallets
-        crate::api::handlers::org_wallets::get_org_wallet,
-        // Person wallets
-        crate::api::handlers::person_wallets::list_my_wallets,
-        crate::api::handlers::person_wallets::get_my_wallet,
+        // Entity wallets
+        crate::api::handlers::entity_wallets::get_org_wallet,
+        // Entity app wallets
+        crate::api::handlers::entity_app_wallets::list_my_wallets,
+        crate::api::handlers::entity_app_wallets::get_my_wallet,
     ),
     components(
         schemas(
             // Request DTOs
-            CreateOrgWallet,
-            CreatePersonTurnkeyRef,
-            CreatePersonAppWallet,
+            CreateEntityWallet,
+            CreateEntityAppWallet,
             // Response DTOs
-            OrgWalletResponse,
-            PersonAppWalletResponse,
+            EntityWalletResponse,
+            EntityAppWalletResponse,
         )
     ),
     tags(
         (name = "health", description = "Health check endpoints"),
-        (name = "org_wallets", description = "Organization wallet endpoints"),
-        (name = "person_wallets", description = "Person wallet endpoints")
+        (name = "entity_wallets", description = "Entity wallet endpoints"),
+        (name = "entity_app_wallets", description = "Entity app wallet endpoints")
     )
 )]
 pub struct ApiDoc;

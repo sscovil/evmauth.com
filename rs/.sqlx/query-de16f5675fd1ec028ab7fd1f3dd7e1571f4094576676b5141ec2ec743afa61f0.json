@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at\n            FROM wallets.person_app_wallets\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id, entity_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at\n            FROM wallets.entity_app_wallets\n            WHERE entity_id = $1\n            ORDER BY created_at ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "person_id",
+        "name": "entity_id",
         "type_info": "Uuid"
       },
       {
@@ -54,5 +54,5 @@
       false
     ]
   },
-  "hash": "51dbee566797b33e881f50edb167794be5512cedc16d17368941aa8a10dd9008"
+  "hash": "de16f5675fd1ec028ab7fd1f3dd7e1571f4094576676b5141ec2ec743afa61f0"
 }

@@ -5,7 +5,6 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
-use uuid::Uuid;
 
 use subtle::ConstantTimeEq;
 
@@ -84,10 +83,11 @@ pub struct TokenResponse {
     pub expires_in: i64,
 }
 
-/// Response from wallets service person sub-org creation
+/// Response from wallets service entity wallet creation
 #[derive(Debug, serde::Deserialize)]
-struct WalletsPersonSubOrgResponse {
+struct EntityWalletResponse {
     turnkey_sub_org_id: types::TurnkeySubOrgId,
+    wallet_address: types::ChecksumAddress,
 }
 
 /// Deployer signup
@@ -141,60 +141,15 @@ pub async fn signup(
             ));
         };
 
-    // Step 1: Call wallets service to create a Turnkey sub-org for this person
-    // We use a placeholder person_id (will be replaced after person creation)
-    // Actually, we need the person_id first for the sub-org, so we create the person first
-    // but we need the sub-org ID for the person's auth_provider_ref...
-    // Solution: create sub-org with a temporary person_id, then create person with the sub-org ID
+    // Step 1: Create person in auth.people using a temporary entity_id
+    // The entity is auto-created by the DB trigger when the person is inserted.
+    // We need the entity_id (== person.id) to create the wallet.
     let wallets_url = &state.config.wallets_service_url;
-    let temp_person_id = Uuid::new_v4();
 
-    let mut sub_org_request = serde_json::json!({
-        "person_id": temp_person_id,
-        "sub_org_name": format!("person-{temp_person_id}"),
-        "root_user_name": body.primary_email,
-    });
-
-    if let Some(authenticators) = authenticators_json {
-        sub_org_request["authenticators"] = serde_json::Value::Array(authenticators);
-    }
-
-    if let Some(ref key_name) = api_key_name {
-        sub_org_request["api_key_name"] = serde_json::Value::String(key_name.clone());
-    }
-    if let Some(ref pub_key) = api_public_key {
-        sub_org_request["api_public_key"] = serde_json::Value::String(pub_key.clone());
-    }
-
-    let sub_org_response = state
-        .http_client
-        .post(format!("{wallets_url}/internal/person-sub-org"))
-        .json(&sub_org_request)
-        .send()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to call wallets service: {e}")))?;
-
-    if !sub_org_response.status().is_success() {
-        let status = sub_org_response.status();
-        let error_body = sub_org_response
-            .text()
-            .await
-            .unwrap_or_else(|_| "unknown error".to_string());
-        return Err(ApiError::Internal(format!(
-            "Wallets service returned {status}: {error_body}"
-        )));
-    }
-
-    let sub_org: WalletsPersonSubOrgResponse = sub_org_response
-        .json()
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to parse wallets response: {e}")))?;
-
-    // Step 2: Create person in auth.people
-    // For passkey signup, auth_provider_ref is the Turnkey sub-org ID
-    // For OAuth signup, use the provided auth_provider_ref
-    let auth_provider_ref = if body.attestation.is_some() {
-        sub_org.turnkey_sub_org_id.to_string()
+    // For passkey signup, auth_provider_ref will be the Turnkey sub-org ID (set after wallet creation).
+    // For OAuth signup, use the provided auth_provider_ref directly.
+    let initial_auth_provider_ref = if body.attestation.is_some() {
+        "pending-turnkey".to_string()
     } else {
         body.auth_provider_ref
             .clone()
@@ -207,10 +162,59 @@ pub async fn signup(
             display_name: body.display_name,
             description: None,
             auth_provider_name,
-            auth_provider_ref,
+            auth_provider_ref: initial_auth_provider_ref,
             primary_email: body.primary_email,
         })
         .await?;
+
+    // Step 2: Create entity wallet for the person (Turnkey sub-org + HD wallet)
+    let mut person_wallet_request = serde_json::json!({
+        "entity_id": person.id,
+        "sub_org_name": format!("person-{}", person.id),
+        "root_user_name": person.primary_email,
+    });
+
+    if let Some(authenticators) = authenticators_json {
+        person_wallet_request["authenticators"] = serde_json::Value::Array(authenticators);
+    }
+
+    if let Some(ref key_name) = api_key_name {
+        person_wallet_request["api_key_name"] = serde_json::Value::String(key_name.clone());
+    }
+    if let Some(ref pub_key) = api_public_key {
+        person_wallet_request["api_public_key"] = serde_json::Value::String(pub_key.clone());
+    }
+
+    let person_wallet_response = state
+        .http_client
+        .post(format!("{wallets_url}/internal/entity-wallet"))
+        .json(&person_wallet_request)
+        .send()
+        .await
+        .map_err(|e| ApiError::Internal(format!("Failed to call wallets service: {e}")))?;
+
+    if !person_wallet_response.status().is_success() {
+        let status = person_wallet_response.status();
+        let error_body = person_wallet_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown error".to_string());
+        return Err(ApiError::Internal(format!(
+            "Wallets service returned {status}: {error_body}"
+        )));
+    }
+
+    let person_wallet: EntityWalletResponse = person_wallet_response
+        .json()
+        .await
+        .map_err(|e| ApiError::Internal(format!("Failed to parse wallets response: {e}")))?;
+
+    // Step 2b: Update auth_provider_ref to the Turnkey sub-org ID for passkey signups
+    if body.attestation.is_some() {
+        person_repo
+            .update_auth_provider_ref(person.id, &person_wallet.turnkey_sub_org_id.to_string())
+            .await?;
+    }
 
     // Step 3: Find the auto-created personal workspace org
     let org_repo = OrgRepositoryImpl::new(&state.db);
@@ -230,15 +234,17 @@ pub async fn signup(
         ApiError::Internal("Personal workspace org was not auto-created".to_string())
     })?;
 
-    // Step 4: Call wallets service to create an org wallet for the personal workspace
+    // Step 4: Create entity wallet for the personal workspace org (with delegated account)
     let org_wallet_request = serde_json::json!({
-        "org_id": personal_org.id,
+        "entity_id": personal_org.id,
         "sub_org_name": format!("org-{}", personal_org.id),
+        "delegated_user_name": format!("delegated-{}", personal_org.id),
+        "delegated_api_public_key": state.config.delegated_api_public_key,
     });
 
     let org_wallet_response = state
         .http_client
-        .post(format!("{wallets_url}/internal/org-wallet"))
+        .post(format!("{wallets_url}/internal/entity-wallet"))
         .json(&org_wallet_request)
         .send()
         .await
@@ -254,10 +260,8 @@ pub async fn signup(
         // Log but don't fail signup -- the wallet can be created later
     } else {
         // Step 4b: Mint capability token for the new org wallet (best-effort)
-        if let Ok(wallet_info) = org_wallet_response.json::<serde_json::Value>().await
-            && let Some(wallet_address_str) = wallet_info.get("address").and_then(|v| v.as_str())
-        {
-            match wallet_address_str.parse::<evm::Address>() {
+        if let Ok(org_wallet) = org_wallet_response.json::<EntityWalletResponse>().await {
+            match org_wallet.wallet_address.as_str().parse::<evm::Address>() {
                 Ok(wallet_address) => {
                     // TOKEN_ID 1 = API access capability token
                     let token_id = evm::U256::from(API_ACCESS_TOKEN_ID);
@@ -265,6 +269,7 @@ pub async fn signup(
                     let calldata = evm::EvmClient::encode_mint(wallet_address, token_id, amount);
 
                     let mint_request = serde_json::json!({
+                        "entity_id": personal_org.id,
                         "to": format!("{}", state.evm.platform_contract_address()),
                         "data": format!("{calldata}"),
                         "chain_id": state.evm.config().chain_id,
@@ -280,7 +285,7 @@ pub async fn signup(
                         Ok(resp) if resp.status().is_success() => {
                             tracing::info!(
                                 org_id = %personal_org.id,
-                                wallet = wallet_address_str,
+                                wallet = %org_wallet.wallet_address,
                                 "Capability token mint submitted"
                             );
                         }

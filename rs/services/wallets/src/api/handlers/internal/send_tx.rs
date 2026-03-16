@@ -14,14 +14,14 @@ use types::{ChecksumAddress, TxHash};
 
 use crate::AppState;
 use crate::api::error::ApiError;
-use crate::repository::org_wallet::{OrgWalletRepository, OrgWalletRepositoryImpl};
+use crate::repository::entity_wallet::{EntityWalletRepository, EntityWalletRepositoryImpl};
 
 use turnkey_client::generated::immutable::activity::v1::SignRawPayloadIntentV2;
 use turnkey_client::generated::immutable::common::v1::{HashFunction, PayloadEncoding};
 
 /// Gas limit buffer: multiply estimate by 120/100 for 20% headroom
-const GAS_LIMIT_BUFFER_NUMERATOR: u128 = 120;
-const GAS_LIMIT_BUFFER_DENOMINATOR: u128 = 100;
+const GAS_LIMIT_BUFFER_NUMERATOR: u64 = 120;
+const GAS_LIMIT_BUFFER_DENOMINATOR: u64 = 100;
 /// Max fee per gas: multiply current gas price by this factor for safety
 const MAX_FEE_GAS_PRICE_MULTIPLIER: u128 = 2;
 /// Priority fee tip: 1 gwei
@@ -32,9 +32,9 @@ const RPC_TIMEOUT: Duration = Duration::from_secs(10);
 /// Request to sign and broadcast a transaction via a delegated account
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SendTxRequest {
-    /// The organization ID whose delegated account should sign
+    /// The entity ID whose delegated account should sign
     #[schema(example = "550e8400-e29b-41d4-a716-446655440000", format = "uuid")]
-    pub org_id: Uuid,
+    pub entity_id: Uuid,
 
     /// Target contract address (None = contract creation)
     #[schema(example = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")]
@@ -59,7 +59,7 @@ pub struct SendTxResponse {
 
 /// Sign and broadcast a transaction via a delegated account
 ///
-/// Looks up the org's delegated account, signs the transaction via Turnkey,
+/// Looks up the entity's delegated account, signs the transaction via Turnkey,
 /// and broadcasts it to the chain. For contract creation transactions (to = None),
 /// returns the computed contract address.
 #[utoipa::path(
@@ -69,7 +69,7 @@ pub struct SendTxResponse {
     responses(
         (status = 200, description = "Transaction broadcast successfully", body = SendTxResponse),
         (status = 400, description = "Bad request"),
-        (status = 404, description = "Org wallet or delegated account not found"),
+        (status = 404, description = "Entity wallet or delegated account not found"),
         (status = 500, description = "Internal server error")
     ),
     tag = "internal/send_tx"
@@ -78,21 +78,21 @@ pub async fn send_tx(
     State(state): State<AppState>,
     Json(request): Json<SendTxRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Step 1: Look up the org wallet
-    let repo = OrgWalletRepositoryImpl::new(&state.db);
-    let org_wallet = repo
-        .get_by_org_id(request.org_id)
+    // Step 1: Look up the entity wallet
+    let repo = EntityWalletRepositoryImpl::new(&state.db);
+    let entity_wallet = repo
+        .get_by_entity_id(request.entity_id)
         .await?
         .ok_or(ApiError::NotFound)?;
 
-    let delegated_user_id = org_wallet.turnkey_delegated_user_id.ok_or_else(|| {
+    let delegated_user_id = entity_wallet.turnkey_delegated_user_id.ok_or_else(|| {
         ApiError::BadRequest(format!(
-            "Organization {} does not have a delegated signing account",
-            request.org_id,
+            "entity {} does not have a delegated signing account",
+            request.entity_id,
         ))
     })?;
 
-    let from_address: Address = org_wallet
+    let from_address: Address = entity_wallet
         .wallet_address
         .as_str()
         .parse()
@@ -172,7 +172,7 @@ pub async fn send_tx(
     let sign_result = state
         .turnkey
         .sign_raw_payload(
-            org_wallet.turnkey_sub_org_id.into_inner(),
+            entity_wallet.turnkey_sub_org_id.into_inner(),
             state.turnkey.current_timestamp(),
             SignRawPayloadIntentV2 {
                 sign_with: delegated_user_id,

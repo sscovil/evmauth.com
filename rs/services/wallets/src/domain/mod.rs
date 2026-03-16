@@ -1,7 +1,5 @@
-pub mod org_wallet;
-pub mod person_app_wallet;
-pub mod person_turnkey_ref;
+pub mod entity_app_wallet;
+pub mod entity_wallet;
 
-pub use org_wallet::OrgWallet;
-pub use person_app_wallet::PersonAppWallet;
-pub use person_turnkey_ref::PersonTurnkeyRef;
+pub use entity_app_wallet::EntityAppWallet;
+pub use entity_wallet::EntityWallet;

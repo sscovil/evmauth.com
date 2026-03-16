@@ -15,6 +15,11 @@ pub trait PersonRepository: Send + Sync {
     async fn get(&self, id: Uuid) -> Result<Option<Person>, RepositoryError>;
     async fn list(&self, filter: PersonFilter, page: Page) -> Result<Vec<Person>, RepositoryError>;
     async fn update(&self, id: Uuid, update: UpdatePerson) -> Result<Person, RepositoryError>;
+    async fn update_auth_provider_ref(
+        &self,
+        id: Uuid,
+        auth_provider_ref: &str,
+    ) -> Result<Person, RepositoryError>;
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
 }
 
@@ -139,6 +144,38 @@ impl<'a> PersonRepository for PersonRepositoryImpl<'a> {
                 && db_err.is_unique_violation()
             {
                 return RepositoryError::ConstraintViolation("Email already exists".to_string());
+            }
+            RepositoryError::Database(e)
+        })?;
+
+        Ok(person)
+    }
+
+    async fn update_auth_provider_ref(
+        &self,
+        id: Uuid,
+        auth_provider_ref: &str,
+    ) -> Result<Person, RepositoryError> {
+        let person = sqlx::query_as!(
+            Person,
+            r#"
+            UPDATE auth.people
+            SET auth_provider_ref = $1
+            WHERE id = $2
+            RETURNING id, display_name, description, auth_provider_name, auth_provider_ref, primary_email, created_at, updated_at
+            "#,
+            auth_provider_ref,
+            id
+        )
+        .fetch_one(self.pool)
+        .await
+        .map_err(|e| {
+            if e.as_database_error()
+                .is_some_and(|db_err| db_err.is_unique_violation())
+            {
+                return RepositoryError::ConstraintViolation(
+                    "Auth provider ref already exists".to_string(),
+                );
             }
             RepositoryError::Database(e)
         })?;

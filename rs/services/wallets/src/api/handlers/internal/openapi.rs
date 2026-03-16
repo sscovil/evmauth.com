@@ -1,8 +1,8 @@
 use utoipa::OpenApi;
 
-use crate::dto::request::person_turnkey_ref::PasskeyAttestationParam;
-use crate::dto::request::{CreateOrgWallet, CreatePersonAppWallet, CreatePersonTurnkeyRef};
-use crate::dto::response::{OrgWalletResponse, PersonAppWalletResponse, PersonTurnkeyRefResponse};
+use crate::dto::request::entity_wallet::PasskeyAttestationParam;
+use crate::dto::request::{CreateEntityAppWallet, CreateEntityWallet};
+use crate::dto::response::{EntityAppWalletResponse, EntityWalletResponse};
 
 use super::send_tx::{SendTxRequest, SendTxResponse};
 use super::signing::SignRequest;
@@ -11,32 +11,28 @@ use super::signing::SignRequest;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::api::handlers::internal::person_sub_orgs::create_person_sub_org,
-        crate::api::handlers::internal::org_wallets::create_org_wallet,
-        crate::api::handlers::internal::org_wallets::get_org_wallet_internal,
-        crate::api::handlers::internal::person_app_wallets::create_person_app_wallet,
-        crate::api::handlers::internal::person_app_wallets::get_person_app_wallet,
+        crate::api::handlers::internal::entity_wallets::create_entity_wallet,
+        crate::api::handlers::internal::entity_wallets::get_entity_wallet,
+        crate::api::handlers::internal::entity_app_wallets::create_entity_app_wallet,
+        crate::api::handlers::internal::entity_app_wallets::get_entity_app_wallet,
         crate::api::handlers::internal::signing::sign_payload,
         crate::api::handlers::internal::send_tx::send_tx,
     ),
     components(
         schemas(
-            CreateOrgWallet,
-            CreatePersonTurnkeyRef,
+            CreateEntityWallet,
             PasskeyAttestationParam,
-            CreatePersonAppWallet,
+            CreateEntityAppWallet,
             SignRequest,
             SendTxRequest,
             SendTxResponse,
-            OrgWalletResponse,
-            PersonTurnkeyRefResponse,
-            PersonAppWalletResponse,
+            EntityWalletResponse,
+            EntityAppWalletResponse,
         )
     ),
     tags(
-        (name = "internal/person_sub_orgs", description = "Internal person sub-org management endpoints"),
-        (name = "internal/org_wallets", description = "Internal org wallet management endpoints"),
-        (name = "internal/person_app_wallets", description = "Internal person app wallet management endpoints"),
+        (name = "internal/entity_wallets", description = "Internal entity wallet management endpoints"),
+        (name = "internal/entity_app_wallets", description = "Internal entity app wallet management endpoints"),
         (name = "internal/signing", description = "Internal signing endpoints"),
         (name = "internal/send_tx", description = "Internal transaction broadcasting endpoints")
     )

@@ -1,19 +1,21 @@
 use chrono::{DateTime, Utc};
 use pagination::Pageable;
 use serde::{Deserialize, Serialize};
-use types::TurnkeySubOrgId;
+use types::ChecksumAddress;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct PersonTurnkeyRef {
+pub struct EntityAppWallet {
     pub id: Uuid,
-    pub person_id: Uuid,
-    pub turnkey_sub_org_id: TurnkeySubOrgId,
+    pub entity_id: Uuid,
+    pub app_registration_id: Uuid,
+    pub wallet_address: ChecksumAddress,
+    pub turnkey_account_id: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-impl Pageable for PersonTurnkeyRef {
+impl Pageable for EntityAppWallet {
     fn cursor_id(&self) -> Uuid {
         self.id
     }

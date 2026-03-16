@@ -1622,16 +1622,16 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Relevant token ID configuration per app registration
 - [x] Wallets service: `POST /internal/send-tx` endpoint (sign + broadcast via Turnkey + Alloy)
 - [x] Registry internal API: `GET /internal/apps/by-client-id/{client_id}`, `GET /internal/contracts/{id}`
-- [ ] Rewrite wallets schema: `entity_wallets` table (replaces `org_wallets` + `person_turnkey_refs`)
-- [ ] Rewrite wallets schema: `entity_app_wallets` table (replaces `person_app_wallets`, adds org support)
-- [ ] EntityWallet domain, DTOs, repository in wallets service
-- [ ] EntityAppWallet domain, DTOs, repository in wallets service
-- [ ] Wallets service: `POST /internal/entity-wallet` endpoint
-- [ ] Wallets service: `POST /internal/entity-app-wallet` endpoint
-- [ ] Update auth signup flow to use `entity-wallet` endpoint
-- [ ] Update app registration creation to trigger entity app wallet derivation
-- [ ] Update contract deployment to use org's entity app wallet as EVMAuth default admin
-- [ ] Internal CLI tool (`evmauth-cli`) for beacon and platform contract deployment
+- [x] Rewrite wallets schema: `entity_wallets` table (replaces `org_wallets` + `person_turnkey_refs`)
+- [x] Rewrite wallets schema: `entity_app_wallets` table (replaces `person_app_wallets`, adds org support)
+- [x] EntityWallet domain, DTOs, repository in wallets service
+- [x] EntityAppWallet domain, DTOs, repository in wallets service
+- [x] Wallets service: `POST /internal/entity-wallet` endpoint
+- [x] Wallets service: `POST /internal/entity-app-wallet` endpoint
+- [x] Update auth signup flow to use `entity-wallet` endpoint
+- [x] Update app registration creation to trigger entity app wallet derivation
+- [x] Update contract deployment to use org's entity app wallet as EVMAuth default admin
+- [x] Internal CLI tool (`evmauth-cli`) for beacon and platform contract deployment
 - [ ] Console: App registration pages, contract deployment wizard, role grant management UI
 
 ### Phase 3 -- End User Auth

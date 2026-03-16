@@ -3,59 +3,59 @@ use sqlx::PgPool;
 use types::ChecksumAddress;
 use uuid::Uuid;
 
-use crate::domain::PersonAppWallet;
+use crate::domain::EntityAppWallet;
 
 use super::error::RepositoryError;
 
 #[async_trait]
-pub trait PersonAppWalletRepository: Send + Sync {
+pub trait EntityAppWalletRepository: Send + Sync {
     async fn create(
         &self,
-        person_id: Uuid,
+        entity_id: Uuid,
         app_registration_id: Uuid,
         wallet_address: &ChecksumAddress,
         turnkey_account_id: &str,
-    ) -> Result<PersonAppWallet, RepositoryError>;
-    async fn get(&self, id: Uuid) -> Result<Option<PersonAppWallet>, RepositoryError>;
-    async fn get_by_person_and_app(
+    ) -> Result<EntityAppWallet, RepositoryError>;
+    async fn get(&self, id: Uuid) -> Result<Option<EntityAppWallet>, RepositoryError>;
+    async fn get_by_entity_and_app(
         &self,
-        person_id: Uuid,
+        entity_id: Uuid,
         app_registration_id: Uuid,
-    ) -> Result<Option<PersonAppWallet>, RepositoryError>;
-    async fn list_by_person_id(
+    ) -> Result<Option<EntityAppWallet>, RepositoryError>;
+    async fn list_by_entity_id(
         &self,
-        person_id: Uuid,
-    ) -> Result<Vec<PersonAppWallet>, RepositoryError>;
+        entity_id: Uuid,
+    ) -> Result<Vec<EntityAppWallet>, RepositoryError>;
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
 }
 
-pub struct PersonAppWalletRepositoryImpl<'a> {
+pub struct EntityAppWalletRepositoryImpl<'a> {
     pool: &'a PgPool,
 }
 
-impl<'a> PersonAppWalletRepositoryImpl<'a> {
+impl<'a> EntityAppWalletRepositoryImpl<'a> {
     pub fn new(pool: &'a PgPool) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait]
-impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
+impl<'a> EntityAppWalletRepository for EntityAppWalletRepositoryImpl<'a> {
     async fn create(
         &self,
-        person_id: Uuid,
+        entity_id: Uuid,
         app_registration_id: Uuid,
         wallet_address: &ChecksumAddress,
         turnkey_account_id: &str,
-    ) -> Result<PersonAppWallet, RepositoryError> {
+    ) -> Result<EntityAppWallet, RepositoryError> {
         let result = sqlx::query_as!(
-            PersonAppWallet,
+            EntityAppWallet,
             r#"
-            INSERT INTO wallets.person_app_wallets (person_id, app_registration_id, wallet_address, turnkey_account_id)
+            INSERT INTO wallets.entity_app_wallets (entity_id, app_registration_id, wallet_address, turnkey_account_id)
             VALUES ($1, $2, $3, $4)
-            RETURNING id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
+            RETURNING id, entity_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
             "#,
-            person_id,
+            entity_id,
             app_registration_id,
             wallet_address.as_str(),
             turnkey_account_id
@@ -67,7 +67,7 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
                 && db_err.is_unique_violation()
             {
                 return RepositoryError::ConstraintViolation(
-                    "Person already has a wallet for this app".to_string(),
+                    "Entity already has a wallet for this app".to_string(),
                 );
             }
             RepositoryError::Database(e)
@@ -76,12 +76,12 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
         Ok(result)
     }
 
-    async fn get(&self, id: Uuid) -> Result<Option<PersonAppWallet>, RepositoryError> {
+    async fn get(&self, id: Uuid) -> Result<Option<EntityAppWallet>, RepositoryError> {
         let wallet = sqlx::query_as!(
-            PersonAppWallet,
+            EntityAppWallet,
             r#"
-            SELECT id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
-            FROM wallets.person_app_wallets
+            SELECT id, entity_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
+            FROM wallets.entity_app_wallets
             WHERE id = $1
             "#,
             id
@@ -92,19 +92,19 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
         Ok(wallet)
     }
 
-    async fn get_by_person_and_app(
+    async fn get_by_entity_and_app(
         &self,
-        person_id: Uuid,
+        entity_id: Uuid,
         app_registration_id: Uuid,
-    ) -> Result<Option<PersonAppWallet>, RepositoryError> {
+    ) -> Result<Option<EntityAppWallet>, RepositoryError> {
         let wallet = sqlx::query_as!(
-            PersonAppWallet,
+            EntityAppWallet,
             r#"
-            SELECT id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
-            FROM wallets.person_app_wallets
-            WHERE person_id = $1 AND app_registration_id = $2
+            SELECT id, entity_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
+            FROM wallets.entity_app_wallets
+            WHERE entity_id = $1 AND app_registration_id = $2
             "#,
-            person_id,
+            entity_id,
             app_registration_id
         )
         .fetch_optional(self.pool)
@@ -113,19 +113,19 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
         Ok(wallet)
     }
 
-    async fn list_by_person_id(
+    async fn list_by_entity_id(
         &self,
-        person_id: Uuid,
-    ) -> Result<Vec<PersonAppWallet>, RepositoryError> {
+        entity_id: Uuid,
+    ) -> Result<Vec<EntityAppWallet>, RepositoryError> {
         let wallets = sqlx::query_as!(
-            PersonAppWallet,
+            EntityAppWallet,
             r#"
-            SELECT id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
-            FROM wallets.person_app_wallets
-            WHERE person_id = $1
+            SELECT id, entity_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at
+            FROM wallets.entity_app_wallets
+            WHERE entity_id = $1
             ORDER BY created_at ASC
             "#,
-            person_id
+            entity_id
         )
         .fetch_all(self.pool)
         .await?;
@@ -136,7 +136,7 @@ impl<'a> PersonAppWalletRepository for PersonAppWalletRepositoryImpl<'a> {
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError> {
         let result = sqlx::query!(
             r#"
-            DELETE FROM wallets.person_app_wallets
+            DELETE FROM wallets.entity_app_wallets
             WHERE id = $1
             "#,
             id

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at\n            FROM wallets.person_app_wallets\n            WHERE person_id = $1\n            ORDER BY created_at ASC\n            ",
+  "query": "\n            SELECT id, entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at\n            FROM wallets.entity_wallets\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -10,31 +10,36 @@
       },
       {
         "ordinal": 1,
-        "name": "person_id",
+        "name": "entity_id",
         "type_info": "Uuid"
       },
       {
         "ordinal": 2,
-        "name": "app_registration_id",
-        "type_info": "Uuid"
+        "name": "turnkey_sub_org_id",
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "wallet_address",
+        "name": "turnkey_wallet_id",
         "type_info": "Text"
       },
       {
         "ordinal": 4,
-        "name": "turnkey_account_id",
+        "name": "wallet_address",
         "type_info": "Text"
       },
       {
         "ordinal": 5,
+        "name": "turnkey_delegated_user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -50,9 +55,10 @@
       false,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "7067bf62d8d054ca6ce94d333feb501f06beaca6a29b0c04cdb6036fee1fe54f"
+  "hash": "f659b010f33e337d2619e93edf83dff3c965a2b77a698aeca2de055df0225a1d"
 }

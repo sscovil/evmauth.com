@@ -1,9 +1,7 @@
+pub mod entity_app_wallet;
+pub mod entity_wallet;
 pub mod error;
-pub mod org_wallet;
-pub mod person_app_wallet;
-pub mod person_turnkey_ref;
 
+pub use entity_app_wallet::{EntityAppWalletRepository, EntityAppWalletRepositoryImpl};
+pub use entity_wallet::{EntityWalletRepository, EntityWalletRepositoryImpl};
 pub use error::RepositoryError;
-pub use org_wallet::{OrgWalletRepository, OrgWalletRepositoryImpl};
-pub use person_app_wallet::{PersonAppWalletRepository, PersonAppWalletRepositoryImpl};
-pub use person_turnkey_ref::{PersonTurnkeyRefRepository, PersonTurnkeyRefRepositoryImpl};

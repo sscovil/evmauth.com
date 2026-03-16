@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO wallets.person_app_wallets (person_id, app_registration_id, wallet_address, turnkey_account_id)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, person_id, app_registration_id, wallet_address, turnkey_account_id, created_at, updated_at\n            ",
+  "query": "\n            SELECT id, entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at\n            FROM wallets.entity_wallets\n            WHERE entity_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -10,41 +10,43 @@
       },
       {
         "ordinal": 1,
-        "name": "person_id",
+        "name": "entity_id",
         "type_info": "Uuid"
       },
       {
         "ordinal": 2,
-        "name": "app_registration_id",
-        "type_info": "Uuid"
+        "name": "turnkey_sub_org_id",
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "wallet_address",
+        "name": "turnkey_wallet_id",
         "type_info": "Text"
       },
       {
         "ordinal": 4,
-        "name": "turnkey_account_id",
+        "name": "wallet_address",
         "type_info": "Text"
       },
       {
         "ordinal": 5,
+        "name": "turnkey_delegated_user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -53,9 +55,10 @@
       false,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "c18975840b61e3ef5281c1d024dcf6e2588fa22784421481376fab20134f6b62"
+  "hash": "86d416b8713fac0026152a77ffb27e0e0855b6e0b4c6bc1ac2f6952f5860e321"
 }
