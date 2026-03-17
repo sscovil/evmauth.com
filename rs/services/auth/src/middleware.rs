@@ -10,10 +10,11 @@ use uuid::Uuid;
 
 use crate::{AppState, jwt};
 
-/// Extension type to store the authenticated person ID
+/// Extension type to store the authenticated person ID and wallet address
 #[derive(Debug, Clone)]
 pub struct AuthenticatedPerson {
     pub person_id: Uuid,
+    pub wallet_address: String,
 }
 
 /// Middleware that validates the session JWT from the cookie or Authorization header
@@ -60,9 +61,10 @@ pub async fn require_session(
                 }
             };
 
-            request
-                .extensions_mut()
-                .insert(AuthenticatedPerson { person_id });
+            request.extensions_mut().insert(AuthenticatedPerson {
+                person_id,
+                wallet_address: claims.wallet,
+            });
 
             next.run(request).await
         }

@@ -70,7 +70,7 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 # Blockchain
-alloy = { version = "1", features = ["providers", "provider-http", "contract", "sol-types", "network", "rpc-types", "transports"] }
+alloy = { version = "1", features = ["providers", "provider-http", "contract", "sol-types", "network", "rpc-types", "transports", "signers", "signer-local"] }
 
 # Internal crates
 evm = { path = "crates/evm" }

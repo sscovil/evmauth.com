@@ -60,12 +60,9 @@ jsonwebtoken = { workspace = true }
 # OpenAPI documentation
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
-subtle = "2.6.1"
 
-# Auth code / PKCE / JWKS
-sha2 = "0.10"
+# Challenge nonce generation + signature hex encoding
 hex = "0.4"
 rand = "0.9"
-rsa = { version = "0.9", features = ["pkcs5"] }
 
 [dev-dependencies]

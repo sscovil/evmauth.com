@@ -3,6 +3,7 @@
 import {
     Alert,
     Button,
+    Code,
     Container,
     Loader,
     Paper,
@@ -12,31 +13,24 @@ import {
     Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
+import { getWebAuthnAttestation } from '@turnkey/sdk-browser';
 import { useSearchParams } from 'next/navigation';
 import { type ReactElement, Suspense, useEffect, useState } from 'react';
 
-interface AppInfo {
-    app_name: string;
-    client_id: string;
-    redirect_uri: string;
+interface CreateEndUserResponse {
+    wallet_address: string;
+    person_id: string;
 }
 
-interface AuthenticateResponse {
-    redirect_url: string;
-}
-
-function EndUserLoginForm(): ReactElement {
+function EndUserSignupForm(): ReactElement {
     const searchParams = useSearchParams();
-    const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-    const [validationError, setValidationError] = useState('');
     const [loading, setLoading] = useState(false);
     const [validating, setValidating] = useState(true);
+    const [validationError, setValidationError] = useState('');
+    const [result, setResult] = useState<CreateEndUserResponse | null>(null);
 
     const clientId = searchParams.get('client_id') ?? '';
-    const redirectUri = searchParams.get('redirect_uri') ?? '';
-    const state = searchParams.get('state') ?? '';
-    const codeChallenge = searchParams.get('code_challenge') ?? '';
-    const codeChallengeMethod = searchParams.get('code_challenge_method') ?? '';
+    const callbackUrl = searchParams.get('callback_url') ?? '';
 
     const form = useForm({
         initialValues: { email: '', displayName: '' },
@@ -47,54 +41,11 @@ function EndUserLoginForm(): ReactElement {
     });
 
     useEffect(() => {
-        if (!clientId || !redirectUri || !codeChallenge) {
-            setValidationError(
-                'Missing required parameters: client_id, redirect_uri, code_challenge',
-            );
-            setValidating(false);
-            return;
+        if (!clientId) {
+            setValidationError('Missing required parameter: client_id');
         }
-
-        if (codeChallengeMethod && codeChallengeMethod !== 'S256') {
-            setValidationError('code_challenge_method must be S256');
-            setValidating(false);
-            return;
-        }
-
-        const params = new URLSearchParams({
-            client_id: clientId,
-            redirect_uri: redirectUri,
-            code_challenge: codeChallenge,
-            code_challenge_method: 'S256',
-        });
-        if (state) params.set('state', state);
-
-        fetch(`/api/proxy/auth/auth/end-user/authorize?${params.toString()}`, {
-            credentials: 'include',
-        })
-            .then(async (resp) => {
-                if (!resp.ok) {
-                    const body: unknown = await resp.json().catch(() => null);
-                    const msg =
-                        body !== null &&
-                        typeof body === 'object' &&
-                        'error' in body &&
-                        typeof (body as Record<string, unknown>).error === 'string'
-                            ? ((body as Record<string, unknown>).error as string)
-                            : `Validation failed (${resp.status})`;
-                    setValidationError(msg);
-                    return;
-                }
-                const data = (await resp.json()) as AppInfo;
-                setAppInfo(data);
-            })
-            .catch((e: Error) => {
-                setValidationError(e.message);
-            })
-            .finally(() => {
-                setValidating(false);
-            });
-    }, [clientId, redirectUri, codeChallenge, codeChallengeMethod, state]);
+        setValidating(false);
+    }, [clientId]);
 
     async function handleSubmit(values: {
         email: string;
@@ -104,18 +55,39 @@ function EndUserLoginForm(): ReactElement {
         form.clearErrors();
 
         try {
-            const resp = await fetch('/api/proxy/auth/auth/end-user/authorize', {
+            // Create passkey attestation
+            const challenge = crypto.randomUUID();
+            const attestation = await getWebAuthnAttestation({
+                publicKey: {
+                    rp: { id: window.location.hostname, name: 'EVMAuth' },
+                    user: {
+                        id: new TextEncoder().encode(challenge),
+                        name: values.email,
+                        displayName: values.displayName || values.email,
+                    },
+                    challenge: new TextEncoder().encode(challenge),
+                    pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+                    authenticatorSelection: {
+                        residentKey: 'preferred',
+                        userVerification: 'required',
+                    },
+                },
+            });
+
+            // Submit to backend
+            const resp = await fetch('/api/proxy/auth/end-users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
-                    client_id: clientId,
-                    redirect_uri: redirectUri,
-                    code_challenge: codeChallenge,
-                    state: state || undefined,
                     email: values.email,
                     display_name: values.displayName || undefined,
-                    auth_provider_name: 'turnkey',
+                    client_id: clientId,
+                    attestation: {
+                        authenticator_name: `${values.displayName || values.email}-passkey`,
+                        challenge,
+                        attestation,
+                    },
                 }),
             });
 
@@ -127,18 +99,21 @@ function EndUserLoginForm(): ReactElement {
                     'error' in body &&
                     typeof (body as Record<string, unknown>).error === 'string'
                         ? ((body as Record<string, unknown>).error as string)
-                        : 'Authentication failed';
+                        : 'Signup failed';
                 form.setFieldError('email', msg);
                 return;
             }
 
-            const data = (await resp.json()) as AuthenticateResponse;
-            window.location.href = data.redirect_url;
+            const data = (await resp.json()) as CreateEndUserResponse;
+            setResult(data);
+
+            // If a callback URL is provided, redirect with the wallet address
+            if (callbackUrl) {
+                const separator = callbackUrl.includes('?') ? '&' : '?';
+                window.location.href = `${callbackUrl}${separator}wallet_address=${data.wallet_address}`;
+            }
         } catch (err) {
-            form.setFieldError(
-                'email',
-                err instanceof Error ? err.message : 'Authentication failed',
-            );
+            form.setFieldError('email', err instanceof Error ? err.message : 'Signup failed');
         } finally {
             setLoading(false);
         }
@@ -149,7 +124,7 @@ function EndUserLoginForm(): ReactElement {
             <Container size="xs" py="xl">
                 <Stack align="center" mt={100}>
                     <Loader />
-                    <Text c="dimmed">Validating authorization request...</Text>
+                    <Text c="dimmed">Validating request...</Text>
                 </Stack>
             </Container>
         );
@@ -158,9 +133,30 @@ function EndUserLoginForm(): ReactElement {
     if (validationError) {
         return (
             <Container size="xs" py="xl">
-                <Alert color="red" title="Invalid Authorization Request" mt={100}>
+                <Alert color="red" title="Invalid Request" mt={100}>
                     {validationError}
                 </Alert>
+            </Container>
+        );
+    }
+
+    if (result) {
+        return (
+            <Container size="xs" py="xl">
+                <Paper shadow="md" p="xl" radius="md" mt={100}>
+                    <Stack gap="lg" align="center">
+                        <Title order={2}>Account Created</Title>
+                        <Text c="dimmed" ta="center">
+                            Your wallet address has been created.
+                        </Text>
+                        <div>
+                            <Text size="sm" fw={500} mb={4}>
+                                Wallet Address
+                            </Text>
+                            <Code>{result.wallet_address}</Code>
+                        </div>
+                    </Stack>
+                </Paper>
             </Container>
         );
     }
@@ -170,10 +166,9 @@ function EndUserLoginForm(): ReactElement {
             <Paper shadow="md" p="xl" radius="md" mt={100}>
                 <form onSubmit={form.onSubmit(handleSubmit)}>
                     <Stack gap="lg" align="center">
-                        <Title order={2}>Sign in</Title>
+                        <Title order={2}>Create Account</Title>
                         <Text c="dimmed" ta="center">
-                            <strong>{appInfo?.app_name}</strong> is requesting access to your
-                            EVMAuth account.
+                            Create an EVMAuth account with a passkey to get started.
                         </Text>
 
                         <TextInput
@@ -188,7 +183,7 @@ function EndUserLoginForm(): ReactElement {
 
                         <TextInput
                             label="Display Name"
-                            placeholder="Your name (optional, for new accounts)"
+                            placeholder="Your name (optional)"
                             w="100%"
                             size="md"
                             {...form.getInputProps('displayName')}
@@ -201,7 +196,7 @@ function EndUserLoginForm(): ReactElement {
                             loading={loading}
                             disabled={!form.values.email}
                         >
-                            Continue
+                            Create Account with Passkey
                         </Button>
                     </Stack>
                 </form>
@@ -210,7 +205,7 @@ function EndUserLoginForm(): ReactElement {
     );
 }
 
-export default function EndUserLoginPage(): ReactElement {
+export default function EndUserSignupPage(): ReactElement {
     return (
         <Suspense
             fallback={
@@ -221,7 +216,7 @@ export default function EndUserLoginPage(): ReactElement {
                 </Container>
             }
         >
-            <EndUserLoginForm />
+            <EndUserSignupForm />
         </Suspense>
     );
 }

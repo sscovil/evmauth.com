@@ -59,4 +59,7 @@ types = { workspace = true }
 alloy = { workspace = true }
 evm = { workspace = true }
 
+# Signature verification
+hex = "0.4"
+
 [dev-dependencies]

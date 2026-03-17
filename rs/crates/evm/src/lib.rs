@@ -4,15 +4,19 @@ pub mod beacon;
 pub mod client;
 /// EVMAuth6909 contract interaction helpers (queries and calldata encoding).
 pub mod evmauth;
+/// Ethereum signature recovery and ERC-712 typed-data verification.
+pub mod signature;
 
 /// Re-export of Alloy address type for use by dependent crates.
-pub use alloy::primitives::{Address, Bytes, U256};
+pub use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 /// Re-export beacon proxy deploy encoder for convenience.
 pub use beacon::encode_beacon_proxy_deploy;
 /// Re-export the EVM client and its configuration struct.
 pub use client::{EvmClient, EvmConfig};
 /// Re-export EVMAuth role constants and helpers.
 pub use evmauth::roles;
+/// Re-export signature verification functions.
+pub use signature::{recover_signer, verify_accounts_query};
 
 use thiserror::Error;
 

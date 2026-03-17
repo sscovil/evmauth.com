@@ -1,5 +1,4 @@
 pub mod api;
-pub mod auth_code;
 pub mod config;
 pub mod domain;
 pub mod dto;

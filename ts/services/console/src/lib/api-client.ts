@@ -37,43 +37,6 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     return response.json() as Promise<T>;
 }
 
-/**
- * Authenticate a user by email. Attempts login first; if the user does not
- * exist (401/404), falls back to signup automatically.
- */
-export async function authenticate(email: string): Promise<void> {
-    const loginResponse = await fetch('/api/auth/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-        credentials: 'include',
-    });
-
-    if (loginResponse.ok) {
-        return;
-    }
-
-    if (loginResponse.status === 401 || loginResponse.status === 404) {
-        const displayName = email.split('@')[0] ?? email;
-        const signupResponse = await fetch('/api/auth/people', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ displayName, email }),
-            credentials: 'include',
-        });
-
-        if (signupResponse.ok) {
-            return;
-        }
-
-        const signupBody: unknown = await signupResponse.json().catch(() => null);
-        throw new Error(getErrorMessage(signupBody, 'Signup failed'));
-    }
-
-    const loginBody: unknown = await loginResponse.json().catch(() => null);
-    throw new Error(getErrorMessage(loginBody, 'Login failed'));
-}
-
 interface ApiClient {
     get: <T>(path: string) => Promise<T>;
     post: <T>(path: string, body: unknown) => Promise<T>;

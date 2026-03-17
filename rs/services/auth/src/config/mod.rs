@@ -15,7 +15,6 @@ pub struct Config {
     pub jwt_public_key_pem: Option<String>,
     pub wallets_service_url: String,
     pub delegated_api_public_key: String,
-    pub auth_code_ttl_secs: u64,
     pub evm: evm::EvmConfig,
 }
 
@@ -34,7 +33,6 @@ impl std::fmt::Debug for Config {
             )
             .field("wallets_service_url", &self.wallets_service_url)
             .field("delegated_api_public_key", &"[redacted]")
-            .field("auth_code_ttl_secs", &self.auth_code_ttl_secs)
             .field("evm", &self.evm)
             .finish()
     }
@@ -93,10 +91,6 @@ impl Config {
             wallets_service_url: env::var("WALLETS_SERVICE_URL")
                 .unwrap_or_else(|_| "http://int-wallets:8000".to_string()),
             delegated_api_public_key: env::var("DELEGATED_API_PUBLIC_KEY")?,
-            auth_code_ttl_secs: env::var("AUTH_CODE_TTL_SECS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(30),
             evm: evm::EvmConfig {
                 rpc_url: env::var("EVM_RPC_URL")
                     .unwrap_or_else(|_| "http://localhost:8545".to_string()),

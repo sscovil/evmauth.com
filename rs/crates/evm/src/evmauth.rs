@@ -170,4 +170,59 @@ impl EvmClient {
         let call = IEVMAuth6909::revokeRoleCall { role, account };
         Bytes::from(call.abi_encode())
     }
+
+    /// Query the balance of `account` for a specific token on a given contract address
+    /// (not necessarily the platform contract).
+    pub async fn balance_of_contract(
+        &self,
+        contract: Address,
+        account: Address,
+        token_id: U256,
+    ) -> Result<U256, EvmError> {
+        let instance = IEVMAuth6909::new(contract, self.provider());
+        let balance =
+            tokio::time::timeout(RPC_TIMEOUT, instance.balanceOf(account, token_id).call())
+                .await
+                .map_err(|_| EvmError::Timeout("balance_of call timed out".to_string()))?
+                .map_err(|e| EvmError::Contract(format!("balance_of call failed: {e}")))?;
+        Ok(balance)
+    }
+
+    /// Check whether `spender` is an operator for `owner` on a given contract address
+    /// (not necessarily the platform contract).
+    pub async fn is_operator_on_contract(
+        &self,
+        contract: Address,
+        owner: Address,
+        spender: Address,
+    ) -> Result<bool, EvmError> {
+        let instance = IEVMAuth6909::new(contract, self.provider());
+        let is_op = tokio::time::timeout(RPC_TIMEOUT, instance.isOperator(owner, spender).call())
+            .await
+            .map_err(|_| EvmError::Timeout("is_operator call timed out".to_string()))?
+            .map_err(|e| EvmError::Contract(format!("is_operator call failed: {e}")))?;
+        Ok(is_op)
+    }
+
+    /// Batch-query balances for multiple token IDs on a given contract.
+    /// Returns `(token_id, balance)` pairs in the same order as input.
+    pub async fn balances_for(
+        &self,
+        contract: Address,
+        account: Address,
+        token_ids: &[U256],
+    ) -> Result<Vec<(U256, U256)>, EvmError> {
+        let futs: Vec<_> = token_ids
+            .iter()
+            .map(|&token_id| async move {
+                let balance = self
+                    .balance_of_contract(contract, account, token_id)
+                    .await?;
+                Ok::<_, EvmError>((token_id, balance))
+            })
+            .collect();
+
+        let results = futures::future::try_join_all(futs).await?;
+        Ok(results)
+    }
 }

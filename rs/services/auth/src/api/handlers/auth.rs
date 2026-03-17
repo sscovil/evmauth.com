@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     Json,
     extract::State,
@@ -6,9 +8,8 @@ use axum::{
 };
 use serde_json::json;
 
-use subtle::ConstantTimeEq;
-
 use crate::api::error::ApiError;
+use crate::api::handlers::challenges;
 use crate::domain::OrgVisibility;
 use crate::dto::request::CreatePerson;
 use crate::repository::filter::OrgFilter;
@@ -23,6 +24,9 @@ const SESSION_DURATION_HOURS: i64 = 8;
 /// Token ID for the API access capability token (ERC-6909)
 const API_ACCESS_TOKEN_ID: u64 = 1;
 
+/// Timeout for internal service calls
+const SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Passkey attestation data from the frontend (via @turnkey/sdk-browser)
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, utoipa::ToSchema)]
 pub struct PasskeyAttestation {
@@ -36,7 +40,7 @@ pub struct PasskeyAttestation {
     pub attestation: serde_json::Value,
 }
 
-/// Deployer signup request
+/// Deployer signup request (passkey-only)
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct SignupRequest {
     /// Display name for the new person
@@ -45,28 +49,22 @@ pub struct SignupRequest {
     /// Primary email address
     #[schema(example = "alice.adams@example.com", format = "email")]
     pub primary_email: String,
-    /// Passkey attestation data (for passkey-based signup via Turnkey)
-    pub attestation: Option<PasskeyAttestation>,
-    /// Authentication provider name (for OAuth-based signup, e.g. "google")
-    #[schema(example = "turnkey", format = "string")]
-    pub auth_provider_name: Option<String>,
-    /// Authentication provider reference / user ID from provider
-    #[schema(example = "usr_abc123xyz", format = "string")]
-    pub auth_provider_ref: Option<String>,
+    /// Passkey attestation data (required -- passkey-only signup)
+    pub attestation: PasskeyAttestation,
 }
 
-/// Login request
+/// Login request -- wallet signature verification
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {
-    /// Primary email address
-    #[schema(example = "alice.adams@example.com", format = "email")]
-    pub primary_email: String,
-    /// Authentication provider name
-    #[schema(example = "turnkey", format = "string")]
-    pub auth_provider_name: String,
-    /// Authentication provider reference
-    #[schema(example = "usr_abc123xyz", format = "string")]
-    pub auth_provider_ref: String,
+    /// Wallet address of the deployer
+    #[schema(example = "0x1234...abcd", format = "string")]
+    pub wallet_address: String,
+    /// Hex-encoded signature of the challenge nonce
+    #[schema(example = "0xabc123...", format = "string")]
+    pub signature: String,
+    /// The challenge nonce from `POST /challenges`
+    #[schema(example = "a1b2c3d4e5f6...", format = "string")]
+    pub challenge: String,
 }
 
 /// Token response
@@ -90,7 +88,13 @@ struct EntityWalletResponse {
     wallet_address: types::ChecksumAddress,
 }
 
-/// Deployer signup
+/// Response from wallets service wallet-by-address lookup
+#[derive(Debug, serde::Deserialize)]
+struct WalletByAddressResponse {
+    entity_id: uuid::Uuid,
+}
+
+/// Deployer signup (passkey-only)
 ///
 /// Creates a new person account, provisions a Turnkey sub-org and personal
 /// workspace wallet, and issues a session JWT.
@@ -114,76 +118,33 @@ pub async fn signup(
         .as_ref()
         .ok_or_else(|| ApiError::Internal("JWT not configured".to_string()))?;
 
-    // Validate: must have either passkey attestation or OAuth provider fields
-    let (auth_provider_name, authenticators_json, api_key_name, api_public_key) =
-        if let Some(attestation) = &body.attestation {
-            // Passkey-based signup via Turnkey
-            let authenticators = vec![serde_json::json!({
-                "authenticator_name": attestation.authenticator_name,
-                "challenge": attestation.challenge,
-                "attestation": attestation.attestation,
-            })];
-            (
-                "turnkey".to_string(),
-                Some(authenticators),
-                None::<String>,
-                None::<String>,
-            )
-        } else if let (Some(provider_name), Some(_provider_ref)) =
-            (&body.auth_provider_name, &body.auth_provider_ref)
-        {
-            // OAuth-based signup -- no Turnkey authenticators, will use API key flow
-            (provider_name.clone(), None, None, None)
-        } else {
-            return Err(ApiError::BadRequest(
-                "Either attestation or both auth_provider_name and auth_provider_ref are required"
-                    .to_string(),
-            ));
-        };
-
-    // Step 1: Create person in auth.people using a temporary entity_id
-    // The entity is auto-created by the DB trigger when the person is inserted.
-    // We need the entity_id (== person.id) to create the wallet.
     let wallets_url = &state.config.wallets_service_url;
 
-    // For passkey signup, auth_provider_ref will be the Turnkey sub-org ID (set after wallet creation).
-    // For OAuth signup, use the provided auth_provider_ref directly.
-    let initial_auth_provider_ref = if body.attestation.is_some() {
-        "pending-turnkey".to_string()
-    } else {
-        body.auth_provider_ref
-            .clone()
-            .ok_or_else(|| ApiError::BadRequest("auth_provider_ref is required".to_string()))?
-    };
+    // Step 1: Create person with temporary auth_provider_ref (Turnkey sub-org ID set after wallet creation)
+    let authenticators = vec![serde_json::json!({
+        "authenticator_name": body.attestation.authenticator_name,
+        "challenge": body.attestation.challenge,
+        "attestation": body.attestation.attestation,
+    })];
 
     let person_repo = PersonRepositoryImpl::new(&state.db);
     let person = person_repo
         .create(CreatePerson {
             display_name: body.display_name,
             description: None,
-            auth_provider_name,
-            auth_provider_ref: initial_auth_provider_ref,
+            auth_provider_name: "turnkey".to_string(),
+            auth_provider_ref: "pending-turnkey".to_string(),
             primary_email: body.primary_email,
         })
         .await?;
 
     // Step 2: Create entity wallet for the person (Turnkey sub-org + HD wallet)
-    let mut person_wallet_request = serde_json::json!({
+    let person_wallet_request = serde_json::json!({
         "entity_id": person.id,
         "sub_org_name": format!("person-{}", person.id),
         "root_user_name": person.primary_email,
+        "authenticators": authenticators,
     });
-
-    if let Some(authenticators) = authenticators_json {
-        person_wallet_request["authenticators"] = serde_json::Value::Array(authenticators);
-    }
-
-    if let Some(ref key_name) = api_key_name {
-        person_wallet_request["api_key_name"] = serde_json::Value::String(key_name.clone());
-    }
-    if let Some(ref pub_key) = api_public_key {
-        person_wallet_request["api_public_key"] = serde_json::Value::String(pub_key.clone());
-    }
 
     let person_wallet_response = state
         .http_client
@@ -209,12 +170,10 @@ pub async fn signup(
         .await
         .map_err(|e| ApiError::Internal(format!("Failed to parse wallets response: {e}")))?;
 
-    // Step 2b: Update auth_provider_ref to the Turnkey sub-org ID for passkey signups
-    if body.attestation.is_some() {
-        person_repo
-            .update_auth_provider_ref(person.id, &person_wallet.turnkey_sub_org_id.to_string())
-            .await?;
-    }
+    // Step 2b: Update auth_provider_ref to the Turnkey sub-org ID
+    person_repo
+        .update_auth_provider_ref(person.id, &person_wallet.turnkey_sub_org_id.to_string())
+        .await?;
 
     // Step 3: Find the auto-created personal workspace org
     let org_repo = OrgRepositoryImpl::new(&state.db);
@@ -261,66 +220,18 @@ pub async fn signup(
     } else {
         // Step 4b: Mint capability token for the new org wallet (best-effort)
         if let Ok(org_wallet) = org_wallet_response.json::<EntityWalletResponse>().await {
-            match org_wallet.wallet_address.as_str().parse::<evm::Address>() {
-                Ok(wallet_address) => {
-                    // TOKEN_ID 1 = API access capability token
-                    let token_id = evm::U256::from(API_ACCESS_TOKEN_ID);
-                    let amount = evm::U256::from(1);
-                    let calldata = evm::EvmClient::encode_mint(wallet_address, token_id, amount);
-
-                    let mint_request = serde_json::json!({
-                        "entity_id": personal_org.id,
-                        "to": format!("{}", state.evm.platform_contract_address()),
-                        "data": format!("{calldata}"),
-                        "chain_id": state.evm.config().chain_id,
-                    });
-
-                    match state
-                        .http_client
-                        .post(format!("{wallets_url}/internal/signatures"))
-                        .json(&mint_request)
-                        .send()
-                        .await
-                    {
-                        Ok(resp) if resp.status().is_success() => {
-                            tracing::info!(
-                                org_id = %personal_org.id,
-                                wallet = %org_wallet.wallet_address,
-                                "Capability token mint submitted"
-                            );
-                        }
-                        Ok(resp) => {
-                            let status = resp.status();
-                            let body = resp
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "unknown error".to_string());
-                            tracing::warn!(
-                                org_id = %personal_org.id,
-                                "Capability token mint failed: {status} {body}"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                org_id = %personal_org.id,
-                                "Capability token mint request failed: {e}"
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        org_id = %personal_org.id,
-                        "Invalid wallet address from wallets service: {e}"
-                    );
-                }
-            }
+            mint_capability_token(&state, personal_org.id, &org_wallet).await;
         }
     }
 
-    // Step 5: Issue session JWT
-    let token = jwt::create_session_token(jwt_keys, person.id, SESSION_DURATION_HOURS)
-        .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
+    // Step 5: Issue session JWT with wallet claim
+    let token = jwt::create_session_token(
+        jwt_keys,
+        person.id,
+        person_wallet.wallet_address.as_str(),
+        SESSION_DURATION_HOURS,
+    )
+    .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
 
     let cookie = format!(
         "session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={}",
@@ -338,7 +249,11 @@ pub async fn signup(
     ))
 }
 
-/// Deployer login
+/// Deployer login via wallet signature
+///
+/// Verifies a signed challenge nonce against the wallet address, confirms
+/// the wallet holds the platform API access capability token, and issues
+/// a session JWT.
 #[utoipa::path(
     post,
     path = "/sessions",
@@ -359,37 +274,87 @@ pub async fn login(
         .as_ref()
         .ok_or_else(|| ApiError::Internal("JWT not configured".to_string()))?;
 
-    let repo = PersonRepositoryImpl::new(&state.db);
-
-    // Look up person by email and auth provider
-    let people = repo
-        .list(
-            crate::repository::PersonFilter::new()
-                .email(&body.primary_email)
-                .auth_provider(&body.auth_provider_name),
-            Page {
-                first: Some(1),
-                ..Default::default()
-            },
-        )
-        .await?;
-
-    let person = people.first().ok_or(ApiError::NotFound)?;
-
-    // Verify auth provider ref matches (constant-time to prevent timing attacks)
-    if person
-        .auth_provider_ref
-        .as_bytes()
-        .ct_eq(body.auth_provider_ref.as_bytes())
-        .into()
-    {
-        // match -- fall through
-    } else {
-        return Err(ApiError::BadRequest("Invalid credentials".to_string()));
+    // Step 1: Consume challenge nonce from Redis (single-use)
+    let valid = challenges::consume_challenge(&mut state.redis.clone(), &body.challenge).await?;
+    if !valid {
+        return Err(ApiError::Unauthorized(
+            "invalid or expired challenge".to_string(),
+        ));
     }
 
-    let token = jwt::create_session_token(jwt_keys, person.id, SESSION_DURATION_HOURS)
-        .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
+    // Step 2: Recover signer from the signed challenge
+    let sig_bytes = hex::decode(body.signature.strip_prefix("0x").unwrap_or(&body.signature))
+        .map_err(|e| ApiError::BadRequest(format!("invalid signature hex: {e}")))?;
+
+    let recovered = evm::recover_signer(body.challenge.as_bytes(), &sig_bytes)
+        .map_err(|e| ApiError::Unauthorized(format!("signature verification failed: {e}")))?;
+
+    // Step 3: Verify recovered address matches claimed wallet_address
+    let claimed: evm::Address = body
+        .wallet_address
+        .parse()
+        .map_err(|e| ApiError::BadRequest(format!("invalid wallet_address: {e}")))?;
+
+    if recovered != claimed {
+        return Err(ApiError::Unauthorized(
+            "signature does not match wallet_address".to_string(),
+        ));
+    }
+
+    // Step 4: Look up person by wallet address via wallets service
+    let wallets_url = &state.config.wallets_service_url;
+    let wallet_lookup = tokio::time::timeout(SERVICE_TIMEOUT, async {
+        state
+            .http_client
+            .get(format!(
+                "{wallets_url}/internal/entity-wallet-by-address/{claimed}"
+            ))
+            .send()
+            .await
+    })
+    .await
+    .map_err(|_| ApiError::Internal("wallets service timed out".to_string()))?
+    .map_err(|e| ApiError::Internal(format!("wallets service error: {e}")))?;
+
+    if !wallet_lookup.status().is_success() {
+        return Err(ApiError::Unauthorized(
+            "no account found for this wallet address".to_string(),
+        ));
+    }
+
+    let wallet_data: WalletByAddressResponse = wallet_lookup
+        .json()
+        .await
+        .map_err(|e| ApiError::Internal(format!("failed to parse wallet lookup: {e}")))?;
+
+    // Step 5: Verify the wallet holds the API access capability token
+    let token_id = evm::U256::from(API_ACCESS_TOKEN_ID);
+    let balance = state.evm.balance_of(claimed, token_id).await.map_err(|e| {
+        tracing::warn!("balance_of check failed for {claimed}: {e}");
+        ApiError::Internal("on-chain authorization check failed".to_string())
+    })?;
+
+    if balance.is_zero() {
+        return Err(ApiError::Unauthorized(
+            "wallet does not hold API access token".to_string(),
+        ));
+    }
+
+    // Step 6: Look up person record
+    let person_repo = PersonRepositoryImpl::new(&state.db);
+    let person = person_repo
+        .get(wallet_data.entity_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    // Step 7: Issue session JWT with wallet claim
+    let token = jwt::create_session_token(
+        jwt_keys,
+        person.id,
+        &body.wallet_address,
+        SESSION_DURATION_HOURS,
+    )
+    .map_err(|e| ApiError::Internal(format!("Failed to create token: {e}")))?;
 
     let cookie = format!(
         "session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={}",
@@ -423,4 +388,67 @@ pub async fn logout() -> impl IntoResponse {
         [(header::SET_COOKIE, cookie.to_string())],
         Json(json!({"status": "logged out"})),
     )
+}
+
+/// Best-effort mint of the API access capability token for a newly created org wallet.
+async fn mint_capability_token(
+    state: &AppState,
+    org_id: uuid::Uuid,
+    org_wallet: &EntityWalletResponse,
+) {
+    let wallets_url = &state.config.wallets_service_url;
+
+    match org_wallet.wallet_address.as_str().parse::<evm::Address>() {
+        Ok(wallet_address) => {
+            let token_id = evm::U256::from(API_ACCESS_TOKEN_ID);
+            let amount = evm::U256::from(1);
+            let calldata = evm::EvmClient::encode_mint(wallet_address, token_id, amount);
+
+            let mint_request = serde_json::json!({
+                "entity_id": org_id,
+                "to": format!("{}", state.evm.platform_contract_address()),
+                "data": format!("{calldata}"),
+                "chain_id": state.evm.config().chain_id,
+            });
+
+            match state
+                .http_client
+                .post(format!("{wallets_url}/internal/signatures"))
+                .json(&mint_request)
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    tracing::info!(
+                        org_id = %org_id,
+                        wallet = %org_wallet.wallet_address,
+                        "Capability token mint submitted"
+                    );
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "unknown error".to_string());
+                    tracing::warn!(
+                        org_id = %org_id,
+                        "Capability token mint failed: {status} {body}"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        org_id = %org_id,
+                        "Capability token mint request failed: {e}"
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                org_id = %org_id,
+                "Invalid wallet address from wallets service: {e}"
+            );
+        }
+    }
 }

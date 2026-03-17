@@ -208,6 +208,32 @@ pub async fn get_entity_wallet(
     Ok(Json(wallet.into()))
 }
 
+/// Look up an entity wallet by on-chain wallet address (internal endpoint)
+#[utoipa::path(
+    get,
+    path = "/internal/entity-wallet-by-address/{address}",
+    params(
+        ("address" = String, Path, description = "EIP-55 checksummed wallet address")
+    ),
+    responses(
+        (status = 200, description = "Entity wallet found", body = EntityWalletResponse),
+        (status = 404, description = "No wallet found for this address"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "internal/entity_wallets"
+)]
+pub async fn get_entity_wallet_by_address(
+    State(state): State<AppState>,
+    Path(address): Path<String>,
+) -> Result<Json<EntityWalletResponse>, ApiError> {
+    let repo = EntityWalletRepositoryImpl::new(&state.db);
+    let wallet = repo
+        .get_by_wallet_address(&address)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(wallet.into()))
+}
+
 /// Build the root users list for Turnkey sub-org creation.
 ///
 /// For person entities, this includes passkey authenticators and/or API keys.

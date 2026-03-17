@@ -1,7 +1,7 @@
 pub mod auth;
-pub mod end_user;
+pub mod challenges;
+pub mod end_users;
 pub mod health;
-pub mod jwks;
 pub mod me;
 pub mod org_members;
 pub mod orgs;

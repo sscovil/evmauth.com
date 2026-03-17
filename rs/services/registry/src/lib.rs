@@ -2,6 +2,7 @@ pub mod api;
 pub mod config;
 pub mod domain;
 pub mod dto;
+pub mod middleware;
 pub mod repository;
 
 use std::sync::Arc;

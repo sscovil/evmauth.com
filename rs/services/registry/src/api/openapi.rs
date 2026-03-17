@@ -1,5 +1,6 @@
 use utoipa::OpenApi;
 
+use crate::api::handlers::accounts::{AccountsQuery, AccountsResponse, TokenBalance};
 use crate::dto::request::{
     CreateAppRegistration, CreateContract, CreateRoleGrant, UpdateAppRegistration,
 };
@@ -12,11 +13,13 @@ use crate::dto::response::{
     info(
         title = "Registry Service API",
         version = "1.0.0",
-        description = "App registration, contract deployment, and role grant management"
+        description = "App registration, contract deployment, role grant management, and on-chain account queries"
     ),
     paths(
         // Health
         crate::api::handlers::health::health_check,
+        // Accounts
+        crate::api::handlers::accounts::get_account,
         // App registrations
         crate::api::handlers::app_registrations::create_app_registration,
         crate::api::handlers::app_registrations::list_app_registrations,
@@ -34,6 +37,9 @@ use crate::dto::response::{
     ),
     components(
         schemas(
+            AccountsQuery,
+            AccountsResponse,
+            TokenBalance,
             CreateAppRegistration,
             UpdateAppRegistration,
             CreateContract,
@@ -46,6 +52,7 @@ use crate::dto::response::{
     ),
     tags(
         (name = "health", description = "Health check endpoints"),
+        (name = "accounts", description = "On-chain account balance queries (ERC-712 authenticated)"),
         (name = "app_registrations", description = "App registration management"),
         (name = "contracts", description = "Contract deployment and role management")
     )

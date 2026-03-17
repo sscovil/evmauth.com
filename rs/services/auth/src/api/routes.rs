@@ -7,7 +7,7 @@ use utoipa::OpenApi;
 use crate::AppState;
 
 use super::handlers::{
-    auth as auth_handlers, end_user, health, jwks, me, org_members, orgs, people,
+    auth as auth_handlers, challenges, end_users, health, me, org_members, orgs, people,
 };
 
 #[cfg(feature = "internal-api")]
@@ -15,16 +15,20 @@ use super::handlers::internal;
 use super::openapi::ApiDoc;
 
 async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
-    #[cfg(feature = "internal-api")]
-    {
-        use super::handlers::internal::InternalApiDoc;
-        let mut spec = ApiDoc::openapi();
-        spec.merge(InternalApiDoc::openapi());
-        return Json(spec);
-    }
+    let spec = ApiDoc::openapi();
+    Json(merge_internal_spec(spec))
+}
 
-    #[cfg(not(feature = "internal-api"))]
-    Json(ApiDoc::openapi())
+#[cfg(feature = "internal-api")]
+fn merge_internal_spec(mut spec: utoipa::openapi::OpenApi) -> utoipa::openapi::OpenApi {
+    use super::handlers::internal::InternalApiDoc;
+    spec.merge(InternalApiDoc::openapi());
+    spec
+}
+
+#[cfg(not(feature = "internal-api"))]
+fn merge_internal_spec(spec: utoipa::openapi::OpenApi) -> utoipa::openapi::OpenApi {
+    spec
 }
 
 pub fn api_routes(state: AppState) -> Router<AppState> {
@@ -32,18 +36,13 @@ pub fn api_routes(state: AppState) -> Router<AppState> {
         .route("/openapi.json", get(openapi_spec))
         .route("/health", get(health::health_check))
         // Auth routes (no session required)
+        .route("/challenges", post(challenges::create_challenge))
         .route(
             "/sessions",
             post(auth_handlers::login).delete(auth_handlers::logout),
         )
-        // End-user auth routes (OAuth/PKCE flow)
-        .route(
-            "/authorize",
-            get(end_user::authorize).post(end_user::authenticate),
-        )
-        .route("/tokens", post(end_user::token_exchange))
-        // JWKS
-        .route("/.well-known/jwks.json", get(jwks::jwks))
+        // End-user onboarding
+        .route("/end-users", post(end_users::create_end_user))
         // People routes
         .route(
             "/people",

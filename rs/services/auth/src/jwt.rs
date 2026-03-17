@@ -29,11 +29,6 @@ impl JwtKeys {
 
         Ok(Self { encoding, decoding })
     }
-
-    /// Get the public decoding key reference
-    pub fn public_key_pem(&self) -> &DecodingKey {
-        &self.decoding
-    }
 }
 
 /// Claims for a platform session JWT (deployer dashboard)
@@ -46,24 +41,11 @@ pub struct SessionClaims {
     /// Token type
     #[serde(rename = "type")]
     pub token_type: String,
+    /// Wallet address of the authenticated person
+    pub wallet: String,
     /// Expiration time (Unix timestamp)
     pub exp: i64,
     /// Issued at (Unix timestamp)
-    pub iat: i64,
-}
-
-/// Claims for an end-user app JWT
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EndUserClaims {
-    pub iss: String,
-    pub sub: String,
-    pub aud: String,
-    #[serde(rename = "type")]
-    pub token_type: String,
-    pub wallet: String,
-    pub contract: String,
-    pub chain_id: String,
-    pub exp: i64,
     pub iat: i64,
 }
 
@@ -71,6 +53,7 @@ pub struct EndUserClaims {
 pub fn create_session_token(
     keys: &JwtKeys,
     person_id: Uuid,
+    wallet_address: &str,
     duration_hours: i64,
 ) -> Result<String, JwtError> {
     let now = chrono::Utc::now().timestamp();
@@ -78,6 +61,7 @@ pub fn create_session_token(
         iss: "https://api.evmauth.io".to_string(),
         sub: person_id.to_string(),
         token_type: "session".to_string(),
+        wallet: wallet_address.to_string(),
         exp: now + (duration_hours * 3600),
         iat: now,
     };
@@ -95,32 +79,4 @@ pub fn verify_session_token(keys: &JwtKeys, token: &str) -> Result<SessionClaims
 
     let token_data = decode::<SessionClaims>(token, &keys.decoding, &validation)?;
     Ok(token_data.claims)
-}
-
-/// Create an end-user app JWT
-pub fn create_end_user_token(
-    keys: &JwtKeys,
-    person_id: Uuid,
-    client_id: &str,
-    wallet_address: &str,
-    contract_address: &str,
-    chain_id: &str,
-    duration_secs: i64,
-) -> Result<String, JwtError> {
-    let now = chrono::Utc::now().timestamp();
-    let claims = EndUserClaims {
-        iss: "https://auth.evmauth.io".to_string(),
-        sub: person_id.to_string(),
-        aud: client_id.to_string(),
-        token_type: "end_user".to_string(),
-        wallet: wallet_address.to_string(),
-        contract: contract_address.to_string(),
-        chain_id: chain_id.to_string(),
-        exp: now + duration_secs,
-        iat: now,
-    };
-
-    let header = Header::new(Algorithm::RS256);
-    let token = encode(&header, &claims, &keys.encoding)?;
-    Ok(token)
 }

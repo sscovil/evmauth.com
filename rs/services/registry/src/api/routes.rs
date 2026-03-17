@@ -1,36 +1,48 @@
 #[cfg(feature = "internal-api")]
 use axum::routing::get as get_route;
 use axum::{
-    Json, Router,
+    Json, Router, middleware as axum_middleware,
     routing::{get, post},
 };
 use utoipa::OpenApi;
 
 use crate::AppState;
 
-use super::handlers::{app_registrations, contracts, health};
+use super::handlers::{accounts, app_registrations, contracts, health};
 
 #[cfg(feature = "internal-api")]
 use super::handlers::internal;
 use super::openapi::ApiDoc;
 
 async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
-    #[cfg(feature = "internal-api")]
-    {
-        use super::handlers::internal::InternalApiDoc;
-        let mut spec = ApiDoc::openapi();
-        spec.merge(InternalApiDoc::openapi());
-        return Json(spec);
-    }
-
-    #[cfg(not(feature = "internal-api"))]
-    Json(ApiDoc::openapi())
+    let spec = ApiDoc::openapi();
+    Json(merge_internal_spec(spec))
 }
 
-pub fn api_routes(_state: AppState) -> Router<AppState> {
+#[cfg(feature = "internal-api")]
+fn merge_internal_spec(mut spec: utoipa::openapi::OpenApi) -> utoipa::openapi::OpenApi {
+    use super::handlers::internal::InternalApiDoc;
+    spec.merge(InternalApiDoc::openapi());
+    spec
+}
+
+#[cfg(not(feature = "internal-api"))]
+fn merge_internal_spec(spec: utoipa::openapi::OpenApi) -> utoipa::openapi::OpenApi {
+    spec
+}
+
+pub fn api_routes(state: AppState) -> Router<AppState> {
     let router = Router::new()
         .route("/openapi.json", get(openapi_spec))
         .route("/health", get(health::health_check))
+        // Accounts endpoint (ERC-712 auth required)
+        .route(
+            "/accounts/{address}",
+            get(accounts::get_account).route_layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                crate::middleware::require_erc712_auth,
+            )),
+        )
         // App registration routes
         .route(
             "/orgs/{org_id}/apps",

@@ -22,6 +22,10 @@ pub trait EntityWalletRepository: Send + Sync {
         &self,
         entity_id: Uuid,
     ) -> Result<Option<EntityWallet>, RepositoryError>;
+    async fn get_by_wallet_address(
+        &self,
+        wallet_address: &str,
+    ) -> Result<Option<EntityWallet>, RepositoryError>;
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
 }
 
@@ -102,6 +106,25 @@ impl<'a> EntityWalletRepository for EntityWalletRepositoryImpl<'a> {
             WHERE entity_id = $1
             "#,
             entity_id
+        )
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(wallet)
+    }
+
+    async fn get_by_wallet_address(
+        &self,
+        wallet_address: &str,
+    ) -> Result<Option<EntityWallet>, RepositoryError> {
+        let wallet = sqlx::query_as!(
+            EntityWallet,
+            r#"
+            SELECT id, entity_id, turnkey_sub_org_id, turnkey_wallet_id, wallet_address, turnkey_delegated_user_id, created_at, updated_at
+            FROM wallets.entity_wallets
+            WHERE wallet_address = $1
+            "#,
+            wallet_address
         )
         .fetch_optional(self.pool)
         .await?;

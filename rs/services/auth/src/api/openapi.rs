@@ -2,9 +2,8 @@ use pagination::PaginatedResponse;
 use utoipa::OpenApi;
 
 use crate::api::handlers::auth::{LoginRequest, PasskeyAttestation, SignupRequest, TokenResponse};
-use crate::api::handlers::end_user::{
-    AuthenticateRequest, AuthenticateResponse, AuthorizeParams, AuthorizeResponse, TokenRequest,
-};
+use crate::api::handlers::challenges::ChallengeResponse;
+use crate::api::handlers::end_users::{CreateEndUserRequest, CreateEndUserResponse};
 use crate::api::handlers::me::{CreateAuthenticatorRequest, UpdateMeRequest};
 use crate::domain::OrgVisibility;
 use crate::dto::request::{CreateOrg, CreateOrgMember, UpdateOrg, UpdateOrgMember, UpdatePerson};
@@ -25,10 +24,10 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
         crate::api::handlers::auth::signup,
         crate::api::handlers::auth::login,
         crate::api::handlers::auth::logout,
-        // End-user auth (OAuth/PKCE)
-        crate::api::handlers::end_user::authorize,
-        crate::api::handlers::end_user::authenticate,
-        crate::api::handlers::end_user::token_exchange,
+        // Challenges
+        crate::api::handlers::challenges::create_challenge,
+        // End-user onboarding
+        crate::api::handlers::end_users::create_end_user,
         // Me
         crate::api::handlers::me::get_me,
         crate::api::handlers::me::update_me,
@@ -59,12 +58,11 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
             PasskeyAttestation,
             UpdateMeRequest,
             CreateAuthenticatorRequest,
-            // End-user auth DTOs
-            AuthorizeParams,
-            AuthorizeResponse,
-            AuthenticateRequest,
-            AuthenticateResponse,
-            TokenRequest,
+            // Challenge DTOs
+            ChallengeResponse,
+            // End-user DTOs
+            CreateEndUserRequest,
+            CreateEndUserResponse,
             // Request DTOs
             UpdatePerson,
             CreateOrg,
@@ -86,7 +84,7 @@ use crate::dto::response::{OrgMemberResponse, OrgResponse, PersonResponse};
     tags(
         (name = "health", description = "Health check endpoints"),
         (name = "auth", description = "Authentication endpoints"),
-        (name = "end_user_auth", description = "End-user OAuth/PKCE authentication endpoints"),
+        (name = "end_users", description = "End-user onboarding endpoints"),
         (name = "me", description = "Current user profile endpoints"),
         (name = "people", description = "Person management endpoints"),
         (name = "orgs", description = "Organization management endpoints"),

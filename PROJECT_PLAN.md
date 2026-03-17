@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-17 (rev 13)
+> **Last updated:** 2026-03-17 (rev 14)
 
 ---
 
@@ -48,11 +48,11 @@ The platform has two entity types: **people** and **orgs**. Each entity gets its
 - Manage Turnkey sub-org lifecycle for people and orgs
 - Deploy and upgrade EVMAuth beacon proxy contracts on Radius
 - Use the platform's own EVMAuth contract for access control -- API access rights are ERC-6909 token holdings, not secrets
-- Issue signed JWTs containing wallet address and contract reference (authentication only -- not authorization claims)
-- Implement a full PKCE-based authorization code exchange for end-user auth (code -> JWT)
+- Authenticate deployers via Turnkey passkey + signed challenge nonce (ecrecover + balance_of check)
+- Onboard end users via passkey, returning their wallet address -- no JWTs issued to apps
 - Expose `GET /accounts/{address}` for runtime authorization queries, authenticated via ERC-712 request signing (reads live on-chain state)
 - Provide a developer console for deployers to manage contracts, role grants, and app registrations
-- Provide a hosted auth UI for end users (OAuth redirect flow)
+- Provide a hosted signup page for end users (passkey-based onboarding)
 
 ---
 
@@ -89,7 +89,11 @@ evmauth.com/
 │   │   │       │   ├── openapi.rs
 │   │   │       │   └── handlers/
 │   │   │       │       ├── mod.rs
+│   │   │       │       ├── auth.rs
+│   │   │       │       ├── challenges.rs
+│   │   │       │       ├── end_users.rs
 │   │   │       │       ├── health.rs
+│   │   │       │       ├── me.rs
 │   │   │       │       ├── people.rs
 │   │   │       │       ├── orgs.rs
 │   │   │       │       ├── org_members.rs
@@ -112,7 +116,7 @@ evmauth.com/
 │   │   │           ├── entity.rs
 │   │   │           ├── filter.rs
 │   │   │           └── pagination.rs
-│   │   ├── wallets/               # PARTIAL: Wallet lifecycle & Turnkey management
+│   │   ├── wallets/               # EXISTING: Wallet lifecycle & Turnkey management
 │   │   │   ├── Cargo.toml
 │   │   │   ├── service.json
 │   │   │   └── src/
@@ -133,7 +137,7 @@ evmauth.com/
 │   │   │       ├── domain/
 │   │   │       ├── dto/
 │   │   │       └── repository/
-│   │   ├── registry/              # TO BUILD: App registrations, contracts, accounts query
+│   │   ├── registry/              # EXISTING: App registrations, contracts, accounts query
 │   │   │   ├── Cargo.toml
 │   │   │   ├── service.json
 │   │   │   └── src/
@@ -228,9 +232,10 @@ evmauth.com/
 │       └── evm/                   # EXISTING: Alloy-based EVM interaction
 │           ├── Cargo.toml
 │           └── src/
-│               ├── lib.rs         # EvmError enum, re-exports (Address, Bytes, U256)
+│               ├── lib.rs         # EvmError enum, re-exports (Address, Bytes, U256, FixedBytes)
 │               ├── client.rs      # EvmConfig, EvmClient (read-only Alloy HTTP provider)
-│               └── evmauth.rs     # sol! bindings (balanceOf, isOperator, mint), encode_mint()
+│               ├── evmauth.rs     # sol! bindings (balanceOf, isOperator, mint), encode_mint(), balances_for()
+│               └── signature.rs   # EIP-191 recover_signer(), ERC-712 verify_accounts_query()
 ├── ts/                            # EXISTING: TypeScript frontend (PNPM workspace root)
 │   ├── Dockerfile                 # Unified multi-stage build (dev/builder/runtime, SERVICE build arg)
 │   ├── pnpm-workspace.yaml        # Workspace definition
@@ -261,13 +266,14 @@ evmauth.com/
 │   │           │   │       └── settings/
 │   │           │   ├── auth/
 │   │           │   │   ├── login/
-│   │           │   │   │   ├── page.tsx   # Email login (Mantine useForm)
+│   │           │   │   │   ├── page.tsx   # Passkey login/signup (Turnkey WebAuthn)
 │   │           │   │   │   ├── layout.tsx # Login metadata
 │   │           │   │   │   └── error.tsx  # Login error boundary
-│   │           │   │   ├── callback/
 │   │           │   │   └── end-user/
+│   │           │   │       ├── signup/    # Hosted end-user passkey onboarding
+│   │           │   │       └── wallet/    # End-user wallet self-service
 │   │           │   └── api/
-│   │           │       ├── auth/          # login, signup, logout, me (Zod-validated)
+│   │           │       ├── auth/          # challenges, sessions, people, me (Zod-validated)
 │   │           │       └── proxy/         # Forwards to backend with session auth
 │   │           ├── components/
 │   │           │   ├── UserMenu.tsx       # Header dropdown (name, email, sign out)
@@ -276,7 +282,8 @@ evmauth.com/
 │   │           ├── lib/
 │   │           │   ├── config.ts          # Validated env var access (single source of truth)
 │   │           │   ├── schemas.ts         # Shared Zod schemas (TokenResponse, PersonResponse)
-│   │           │   ├── api-client.ts      # Fetch-based API client + authenticate()
+│   │           │   ├── api-client.ts      # Fetch-based API client (proxy requests)
+│   │           │   ├── turnkey.ts         # Turnkey passkey client + attestation helpers
 │   │           │   ├── session.ts         # iron-session config + SessionData type
 │   │           │   └── hooks.ts           # SWR hooks (useMe, useOrgs)
 │   │           └── types/
@@ -336,15 +343,13 @@ evmauth.com/
 | `alloy` 1.x | Ethereum interaction | Provider, contract calls, ABI encoding (via evm crate) |
 | `turnkey_client` 0.6 | Turnkey API SDK | Typed activity methods, retry logic, P-256 auth |
 | `turnkey_api_key_stamper` 0.6 | Turnkey request signing | P-256 ECDSA stamps for API authentication |
-| `subtle` 2.6 | Constant-time comparison | Timing-safe credential verification in auth service |
+| `jsonwebtoken` 9.3 | JWT signing/verification | RS256 session tokens in auth service |
 
 ### Backend (To Add)
 
 | Dependency | Purpose | Notes |
 |---|---|---|
 | `axum-test` | Integration tests | |
-
-Note: `jsonwebtoken` is already in workspace dependencies (used by auth service).
 
 ### Frontend (PNPM Workspace: `ts/`)
 
@@ -358,14 +363,7 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 | `zod` | Runtime validation (API request/response schemas) | `ts/services/console` |
 | `@types/cookie` | Type definitions for iron-session's cookie dependency | `ts/services/console` (devDependency) |
 
-**To add when implementing end-user auth (Phase 3):**
-
-| Dependency | Purpose | Location |
-|---|---|---|
-| `@turnkey/sdk-browser` | End-user Turnkey interactions | `ts/services/console` |
-| `@turnkey/sdk-react` | Turnkey provider/hooks | `ts/services/console` |
-| `typescript` | | Root |
-| `biome` | Linting + formatting (replaces ESLint + Prettier) | Root |
+| `@turnkey/sdk-browser` | Passkey creation + WebAuthn attestation | `ts/services/console` |
 
 ### Infrastructure (Existing)
 
@@ -400,7 +398,7 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 
 Cross-service references (e.g., `org_id` in `registry.app_registrations`) are stored as plain UUIDs without FK constraints. Referential integrity is enforced via internal API calls.
 
-Auth codes are stored in Redis with TTL (not PostgreSQL). See Section 5 for key format details.
+Challenge nonces for deployer login are stored in Redis with a 60-second TTL. See Section 5 for key format details.
 
 ### Person (auth service -- existing as `auth.people`)
 
@@ -430,9 +428,9 @@ A Turnkey sub-org and HD wallet for any entity (person or org). One per entity. 
 
 An HD wallet account derived for a specific (entity, app_registration) pair. For orgs, derived addresses are optional -- created on-demand by the org owner and can be assigned specific EVMAuth roles on the org's proxy contracts. For people, this is the end user's identity within that app, created automatically when they first authenticate. Replaces `person_app_wallets` and adds org app wallet support.
 
-### AppRegistration (registry service -- partial)
+### AppRegistration (registry service -- existing)
 
-An OAuth-like client registration under an org. Represents one application that will use EVMAuth for authorization. Contains the client ID, allowed callback URLs, a reference to the EVMAuth contract, and the set of token IDs relevant to this app.
+A client registration under an org. Represents one application that will use EVMAuth for authorization. Contains the client ID, allowed callback URLs, a reference to the EVMAuth contract, and the set of token IDs relevant to this app.
 
 There are no client secrets. Access to the authorization query API is controlled by ERC-6909 token holdings on the platform's own EVMAuth contract. The `client_id` is a public lookup key only.
 
@@ -440,7 +438,7 @@ One org can have many app registrations, each pointing to a different EVMAuth pr
 
 The org owner can optionally create derived wallet addresses (via the wallets service) and assign specific EVMAuth roles to them on the app's proxy contract. The org's default HD wallet address (index 0) holds `DEFAULT_ADMIN_ROLE` and all initial roles.
 
-### Contract (registry service -- partial)
+### Contract (registry service -- existing)
 
 An EVMAuth beacon proxy deployed on Radius. Belongs to an org. The proxy is deployed by the platform operator wallet (which pays gas), but at initialization, `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles are assigned to the org's default HD wallet address (index 0). The platform can upgrade the beacon implementation (affecting all proxies), but only the org controls EVMAuth role administration on their contract. The org owner can assign roles to other addresses (including the platform operator for programmatic API access) and revoke non-admin roles from the org's default address. Contains the on-chain contract address, deployment transaction hash, and the beacon implementation address at time of deployment.
 
@@ -490,16 +488,16 @@ The following tables are already implemented with full migration support, trigge
 
 **Redis-stored data (auth service):**
 
-Auth codes for the PKCE token exchange flow are stored in Redis, not PostgreSQL. Redis TTL handles expiration automatically -- no background cleanup task is needed.
+Challenge nonces for deployer login are stored in Redis with a 60-second TTL. The deployer signs the nonce with their wallet key; the backend verifies via `ecrecover` and consumes the nonce.
 
 ```
-Key:    auth_code:{sha256_hex}
-Value:  JSON { app_registration_id, entity_app_wallet_id, code_challenge, redirect_uri, state }
-TTL:    Configurable via AUTH_CODE_TTL_SECS (default 30 seconds)
+Key:    challenge:{hex_nonce}
+Value:  "1"
+TTL:    60 seconds
 ```
 
-- Create: `SET auth_code:{hash} {json} EX {ttl}`
-- Exchange: `GET auth_code:{hash}` then `DEL auth_code:{hash}` (atomic via Redis transaction or Lua script)
+- Create: `POST /challenges` -> `SET challenge:{hex} "1" EX 60`
+- Consume: `POST /sessions` -> `GET challenge:{hex}` then `DEL challenge:{hex}` (single-use)
 - No cleanup task needed -- expired keys vanish automatically
 
 ### `wallets` Schema (wallets service -- existing)
@@ -558,7 +556,7 @@ CREATE TRIGGER but_entity_app_wallets_moddatetime
 EXECUTE FUNCTION moddatetime(updated_at);
 ```
 
-### `registry` Schema (registry service -- to build)
+### `registry` Schema (registry service -- existing)
 
 ```sql
 -- Migration: registry_create_schema
@@ -746,9 +744,10 @@ Services call each other via internal HTTP APIs (feature-gated `/internal/*` rou
 |---|---|---|
 | auth | wallets (internal) | Create entity wallet (Turnkey sub-org + HD wallet) on person signup |
 | auth | wallets (internal) | Create entity wallet for org on org creation |
-| auth | wallets (internal) | Create entity app wallet for person during PKCE flow |
+| auth | wallets (internal) | Look up entity wallet by wallet address (deployer login) |
+| auth | wallets (internal) | Create entity app wallet for person during end-user onboarding |
 | auth | wallets (internal) | Add user to org's Turnkey sub-org when invited to join org |
-| auth | registry (internal) | Validate `client_id` and `redirect_uri` during PKCE flow |
+| auth | registry (internal) | Validate `client_id` during end-user onboarding |
 | registry | wallets (internal) | Look up org's entity wallet address (index 0) for contract deployment |
 | registry | wallets (internal) | Create entity app wallet when org owner requests a derived address |
 | registry | wallets (internal) | Sign transactions via delegated account |
@@ -767,31 +766,46 @@ Services call each other via internal HTTP APIs (feature-gated `/internal/*` rou
 - Health check, OpenAPI spec
 - Repository pattern, filters, pagination
 
-**To add:**
+**Full route listing:**
 
 ```
 /auth/                              # Via gateway: /auth/*
-├── auth/                           # Authentication flows
-│   ├── POST   /signup              # Person signup
-│   ├── POST   /login               # Person login
-│   ├── POST   /callback            # OIDC callback
-│   ├── POST   /logout              # Clear session
-│   ├── GET    /end-user/authorize  # Initiate end-user PKCE auth
-│   └── POST   /end-user/token      # Exchange auth code + PKCE verifier -> JWT
+├── POST   /challenges              # Create challenge nonce (60s TTL in Redis)
+├── POST   /sessions                # Deployer login (wallet_address + signed challenge)
+├── DELETE /sessions                # Logout (clear session cookie)
+├── POST   /people                  # Deployer signup (passkey attestation)
+├── POST   /end-users               # End-user onboarding (passkey + client_id -> wallet_address)
 │
-├── .well-known/
-│   └── GET    /jwks.json           # RS256 public key for JWT verification
+├── GET    /me                      # Current person profile (session required)
+├── PATCH  /me                      # Update display name (session required)
+├── POST   /me/authenticators       # Register backup passkey (session required)
 │
 ├── people/
-│   ├── GET    /me                  # Current person profile
-│   └── PATCH  /me                  # Update display name
+│   ├── GET    /                    # List people
+│   ├── GET    /{id}                # Get person
+│   ├── PUT    /{id}                # Update person
+│   └── DELETE /{id}                # Delete person
+│
+├── orgs/
+│   ├── GET    /                    # List orgs
+│   ├── POST   /                    # Create org
+│   ├── GET    /{id}                # Get org
+│   ├── PUT    /{id}                # Update org
+│   ├── DELETE /{id}                # Delete org
+│   ├── GET    /{id}/members        # List members
+│   ├── POST   /{id}/members        # Add member
+│   ├── PUT    /{org_id}/members/{member_id}    # Update member role
+│   └── DELETE /{org_id}/members/{member_id}    # Remove member
 │
 └── internal/                       # Feature-gated
-    ├── GET    /people/{id}         # Lookup person by ID (for other services)
-    └── GET    /orgs/{id}           # Lookup org by ID (for other services)
+    ├── GET    /entities            # List entities
+    ├── GET    /entities/{id}       # Get entity
+    ├── DELETE /entities/{id}       # Delete entity
+    ├── GET    /people/{id}         # Lookup person by ID
+    └── GET    /orgs/{id}           # Lookup org by ID
 ```
 
-**AppState (extended):**
+**AppState:**
 
 ```rust
 pub struct AppState {
@@ -804,9 +818,7 @@ pub struct AppState {
 }
 ```
 
-**Config includes:** `AUTH_CODE_TTL_SECS` (default 30) -- configurable TTL for PKCE authorization codes stored in Redis.
-
-### Wallets Service (To Build)
+### Wallets Service (Existing)
 
 **Schema owned:** `wallets`
 
@@ -826,12 +838,13 @@ Manages all Turnkey sub-org lifecycle, wallet creation, and signing operations. 
 │
 └── internal/                       # Feature-gated
     ├── POST   /entity-wallet           # Create Turnkey sub-org + HD wallet for entity
-    ├── GET    /entity-wallet/{entity_id} # Look up entity wallet
+    ├── GET    /entity-wallet/{entity_id} # Look up entity wallet by entity ID
+    ├── GET    /entity-wallet-by-address/{address} # Look up entity wallet by wallet address
     ├── POST   /entity-app-wallet       # Derive HD wallet account for (entity, app)
     ├── GET    /entity-app-wallet/{entity_id}/{app_id} # Look up entity app wallet
-    ├── POST   /org-sub-org-user        # Add a user to an org's Turnkey sub-org
-    ├── POST   /sign                    # Sign payload via delegated account
-    └── POST   /send-tx                 # Sign + broadcast transaction via delegated account
+    ├── POST   /authenticators          # Add passkey authenticator to entity's Turnkey sub-org
+    ├── POST   /signatures              # Sign payload via delegated account
+    └── POST   /transactions            # Sign + broadcast transaction via delegated account
 ```
 
 **AppState:**
@@ -849,7 +862,7 @@ pub struct AppState {
 
 The wallets service uses the official Turnkey Rust SDK (`turnkey_client` + `turnkey_api_key_stamper`) directly -- no wrapper crate. The SDK provides typed activity methods (e.g., `create_sub_organization`, `create_wallet`, `sign_raw_payload`), built-in retry logic with exponential backoff, and P-256 ECDSA request signing via the `Stamp` trait.
 
-### Registry Service (To Build)
+### Registry Service (Existing)
 
 **Schema owned:** `registry`
 
@@ -876,11 +889,15 @@ Manages app registrations, deployed contracts, role grants, and the authorizatio
 │   └── DELETE /{contract_id}/roles/{role_grant_id}  # Revoke a role
 │
 ├── accounts/                       # Authorization query (ERC-712 authenticated)
-│   └── GET    /{address}
+│   └── GET    /{address}?contract=&delegate=
+│
+├── middleware/
+│   └── erc712_auth.rs              # ERC-712 signature verification middleware
 │
 └── internal/                       # Feature-gated
     ├── GET    /apps/by-client-id/{client_id}  # Lookup by client_id
-    └── GET    /contracts/{id}                 # Lookup contract by ID
+    ├── GET    /contracts/{id}                 # Lookup contract by ID
+    └── GET    /contracts/by-app/{app_registration_id} # Lookup contract by app
 ```
 
 **AppState:**
@@ -927,18 +944,18 @@ pub struct AppState {
 
 ### Auth Middleware
 
-Three middleware layers used across services:
+Two middleware layers used across services:
 
-1. **`RequireSession`** (auth service) -- validates the platform session JWT (set as an HTTP-only cookie). Extracts `person_id` into request extensions.
+1. **`require_session`** (auth service) -- validates the platform session JWT from a `session=` cookie or `Authorization: Bearer` header. Extracts `AuthenticatedPerson { person_id, wallet_address }` into request extensions.
 
-2. **`RequireOrgRole(role)`** (auth service, registry service) -- confirms the current person is a member of the org in the route path with at least the required role. Calls auth internal API if needed.
-
-3. **`RequireErc712Auth`** (registry service) -- authenticates requests to the `/accounts` endpoint. The caller must include three headers:
+2. **`require_erc712_auth`** (registry service) -- authenticates requests to the `/accounts` endpoint. The caller must include five headers:
     - `X-Client-Id` -- identifies the app registration (public lookup key)
-    - `X-Signer` -- the address that produced the signature
-    - `X-Signature` -- ERC-712 signature over a canonical request digest
+    - `X-Signer` -- the wallet address that produced the signature
+    - `X-Signature` -- hex-encoded ERC-712 signature over the canonical request digest
+    - `X-Nonce` -- hex-encoded 32-byte nonce (first 8 bytes = Unix timestamp; rejected if >30s old)
+    - `X-Contract` -- the contract address being queried
 
-   The middleware recovers the signer from the signature, then calls `balanceOf(platform_contract, signer, TOKEN_ID_API_ACCESS)` on Radius. If the balance is zero, the request is rejected.
+   The middleware recovers the signer via `verify_accounts_query()` from the evm crate, then calls `balanceOf(platform_contract, signer, TOKEN_ID_API_ACCESS)`. If the balance is zero, the request is rejected with 403. Inserts `Erc712AuthContext { signer, client_id }` into request extensions.
 
 ### JWT Strategy
 
@@ -949,28 +966,13 @@ Three middleware layers used across services:
   "iss": "https://api.evmauth.io",
   "sub": "<person_platform_id>",
   "type": "session",
+  "wallet": "0x<person_wallet_address>",
   "exp": "<8 hours>",
   "iat": "<now>"
 }
 ```
 
-**End-user app JWT** (issued to apps via PKCE flow): RS256, same signing key. Claims:
-
-```json
-{
-  "iss": "https://auth.evmauth.io",
-  "sub": "<person_platform_id>",
-  "aud": "<client_id>",
-  "type": "end_user",
-  "wallet": "0x...",
-  "contract": "0x...",
-  "chain_id": "<radius_chain_id>",
-  "exp": "<configurable by deployer, default 1 hour>",
-  "iat": "<now>"
-}
-```
-
-The public key for JWT verification is exposed at `GET /auth/.well-known/jwks.json` (via gateway).
+No end-user JWT is issued. End users authenticate via Turnkey passkey during onboarding and receive a wallet address. At runtime, deployers query `GET /accounts/{address}` with ERC-712 signed requests to check on-chain token balances directly.
 
 ### Turnkey SDK Integration -- Existing
 
@@ -998,16 +1000,17 @@ Handlers use SDK intent types directly (e.g., `CreateSubOrganizationIntentV7`, `
 
 ### EVM Crate (`rs/crates/evm/`) -- Existing
 
-Uses Alloy to interact with Radius. Provides a read-only HTTP provider and typed EVMAuth6909 contract bindings. Used by the auth service (for capability token minting calldata) and will be used by the registry and analytics services.
+Uses Alloy to interact with Radius. Provides a read-only HTTP provider, typed EVMAuth6909 contract bindings, and Ethereum signature verification. Used by the auth service (for capability token minting calldata and deployer login signature verification), the registry service (for `/accounts` queries and ERC-712 verification), and will be used by the analytics service.
 
 `EvmConfig` is a plain data struct -- it does not read environment variables. The consuming service is responsible for populating it from its own config source.
 
-Signing is not handled by the evm crate. The wallets service owns Turnkey signing; other services encode calldata via `encode_mint()` and POST it to the wallets service `/internal/signatures` endpoint.
+Signing is not handled by the evm crate. The wallets service owns Turnkey signing; other services encode calldata via `EvmClient::encode_mint()` and POST it to the wallets service `/internal/signatures` endpoint. The signature module only performs **verification** (ecrecover), never signing.
 
 ```rust
 pub struct EvmConfig {
     pub rpc_url: String,
     pub platform_contract_address: Address,
+    pub platform_operator_address: Address,
     pub chain_id: u64,
 }
 
@@ -1015,16 +1018,32 @@ pub struct EvmClient { /* Alloy HTTP provider + config */ }
 
 impl EvmClient {
     pub fn new(config: EvmConfig) -> Result<Self, EvmError>;
-    pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256>;  // 10s timeout
-    pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool>;  // 10s timeout
-    pub fn encode_mint(to: Address, token_id: U256, amount: U256) -> Bytes;  // static
-    pub fn encode_initialize(admin: Address, treasury: Address, operator: Address, uri: &str) -> Bytes;  // static
-    pub fn encode_grant_role(role: FixedBytes<32>, account: Address) -> Bytes;  // static
-    pub fn encode_revoke_role(role: FixedBytes<32>, account: Address) -> Bytes;  // static
+
+    // Platform contract queries
+    pub async fn balance_of(&self, account: Address, token_id: U256) -> Result<U256>;
+    pub async fn is_operator(&self, owner: Address, spender: Address) -> Result<bool>;
+
+    // Arbitrary contract queries
+    pub async fn balance_of_contract(&self, contract: Address, account: Address, token_id: U256) -> Result<U256>;
+    pub async fn is_operator_on_contract(&self, contract: Address, owner: Address, spender: Address) -> Result<bool>;
+    pub async fn balances_for(&self, contract: Address, account: Address, token_ids: &[U256]) -> Result<Vec<(U256, U256)>>;
+
+    // Calldata encoding (static, no RPC)
+    pub fn encode_mint(to: Address, token_id: U256, amount: U256) -> Bytes;
+    pub fn encode_initialize(admin: Address, treasury: Address, operator: Address, uri: &str) -> Bytes;
+    pub fn encode_grant_role(role: FixedBytes<32>, account: Address) -> Bytes;
+    pub fn encode_revoke_role(role: FixedBytes<32>, account: Address) -> Bytes;
+}
+
+// Signature verification (no signing -- only ecrecover)
+pub mod signature {
+    pub fn recover_signer(message: &[u8], signature: &[u8]) -> Result<Address, EvmError>;
+    pub fn verify_accounts_query(account: Address, contract: Address, client_id: &str,
+        nonce: FixedBytes<32>, chain_id: u64, signature: &[u8]) -> Result<Address, EvmError>;
 }
 
 pub mod roles {
-    pub fn all_operator_roles() -> Vec<FixedBytes<32>>;  // TOKEN_MANAGER, ACCESS_MANAGER, TREASURER, MINTER, BURNER
+    pub fn all_operator_roles() -> Vec<FixedBytes<32>>;
     pub fn role_name_to_bytes(name: &str) -> Option<FixedBytes<32>>;
 }
 
@@ -1033,44 +1052,46 @@ pub fn encode_beacon_proxy_deploy(beacon: Address, init_data: Bytes) -> Result<B
 
 All RPC calls are wrapped in `tokio::time::timeout` (10s) to prevent hangs from unresponsive nodes. The `EvmError` enum includes a `Timeout` variant for this.
 
-`encode_initialize()` builds the ABI-encoded calldata for the proxy's `initialize()` function, granting `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles to the org's default HD wallet address (index 0).
-
-Future additions: `balances_for` (batch query for multiple token IDs).
-
 ### Accounts Endpoint (Authorization Query -- Registry Service)
 
 ```
 GET /registry/accounts/{address}?contract={contract_address}&delegate={delegate_address}
-X-Client-Id: <app_registration_client_id>
-X-Signer:    <address that produced the signature>
-X-Signature: <ERC-712 signature over canonical request digest>
+X-Client-Id:  <app_registration_client_id>
+X-Signer:     <address that produced the signature>
+X-Signature:  <hex-encoded ERC-712 signature>
+X-Nonce:      <hex-encoded 32-byte nonce (first 8 bytes = Unix timestamp)>
+X-Contract:   <contract address being queried>
 ```
 
 #### ERC-712 Request Signing
 
 ```
 Domain:
-  name:    "EVMAuth API"
-  version: "1"
-  chainId: <radius_chain_id>
+  name:              "EVMAuth"
+  version:           "1"
+  chainId:           <radius_chain_id>
+  verifyingContract: 0x0000000000000000000000000000000000000000
 
 Type: AccountsQuery
-  address   address
-  contract  address
-  clientId  string
-  nonce     uint256   -- unix timestamp in seconds (reject if >30s old)
+  address account    -- the account being queried
+  address contract   -- the contract to query
+  string  client_id  -- the app's client_id
+  bytes32 nonce      -- first 8 bytes = Unix timestamp; remaining 24 bytes = random
 ```
 
-#### Handler Logic
+#### Middleware Logic (`require_erc712_auth`)
 
-1. Validate `X-Signature` is a valid ERC-712 signature recovering to `X-Signer`
-2. Reject if `nonce` (timestamp) is older than 30 seconds
-3. Call `balanceOf(platform_contract, X-Signer, TOKEN_ID_API_ACCESS)` on Radius -- reject with `403` if zero
-4. Verify `X-Client-Id` resolves to an app registration whose org's entity wallet address (from `wallets.entity_wallets`, index 0) matches `X-Signer` (or has `X-Signer` as an approved operator via `isOperator`)
-5. If `delegate` query param is present: call `is_operator(contract, address, delegate)` -- reject with `403` if false
-6. Query `balance_of` for each token ID in `relevant_token_ids` for the principal address
-7. Call analytics internal API to log the request
-8. Return response
+1. Extract `X-Client-Id`, `X-Signer`, `X-Signature`, `X-Nonce`, `X-Contract` headers
+2. Parse nonce; reject if timestamp component is older than 30 seconds
+3. Verify ERC-712 signature via `verify_accounts_query()` from evm crate -- recovered address must match `X-Signer`
+4. Call `balanceOf(platform_contract, X-Signer, TOKEN_ID_API_ACCESS)` -- reject with 403 if zero
+5. Insert `Erc712AuthContext { signer, client_id }` into request extensions
+
+#### Handler Logic (`get_account`)
+
+1. If `delegate` query param is present: call `is_operator_on_contract(contract, address, delegate)` -- reject if false
+2. Query `balance_of_contract` for each relevant token ID for the principal address
+3. Return response (only non-zero balances included)
 
 ```json
 {
@@ -1138,7 +1159,7 @@ This is the primary frontend application. It serves the developer console and th
 // Forwards non-2xx responses with original status codes.
 ```
 
-The proxy also handles the one case where the frontend does need to talk to Turnkey directly: the end-user auth callback page uses `@turnkey/sdk-browser` to decrypt the credential Turnkey returns after OIDC. This happens in the browser, then the decrypted credential is sent to the backend to complete authentication.
+The login page uses `@turnkey/sdk-browser` client-side for WebAuthn attestation (signup) and assertion (login). The passkey interaction happens in the browser; the attestation/assertion result is then sent to the Next.js API route which forwards it to the Rust backend.
 
 #### Route Overview
 
@@ -1155,17 +1176,15 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 | `/dashboard/[orgSlug]/contracts/[contractId]` | Contract details -- address, role grant status, block explorer link |
 | `/dashboard/[orgSlug]/members` | Manage org members |
 | `/dashboard/[orgSlug]/settings` | Org settings |
-| `/auth/login` | Console login (passkey / OAuth via Turnkey) |
-| `/auth/callback` | OAuth callback (console) |
-| `/auth/end-user/login` | Hosted end-user auth page (shown to end users of deployer apps) |
-| `/auth/end-user/callback` | End-user OAuth callback; completes PKCE code issuance |
-| `/auth/wallet` | End-user self-service -- key export, linked apps |
+| `/auth/login` | Console login/signup (passkey via Turnkey WebAuthn) |
+| `/auth/end-user/signup` | Hosted end-user passkey onboarding page (accepts `client_id` param) |
+| `/auth/end-user/wallet` | End-user wallet self-service -- view wallets, add backup passkey |
 
 #### Session Management
 
 The frontend uses `iron-session` for encrypted cookie-based sessions. The iron-session cookie (`evmauth-console`) stores `{ personId, email, displayName }` with `httpOnly: true`, `secure` in production, `sameSite: 'strict'`, and 8-hour max age. The `SESSION_SECRET` is loaded via `lib/config.ts` which throws if the env var is missing (no hardcoded fallback).
 
-Next.js API routes (`/api/auth/sessions` POST/DELETE, `/api/auth/people` POST) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the console manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
+Next.js API routes (`/api/auth/challenges` POST, `/api/auth/sessions` POST/DELETE, `/api/auth/people` POST) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the console manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
 
 The API proxy (`/api/proxy/[...path]`) reads the iron-session server-side, rejects unauthenticated requests, and forwards requests to the backend with an `X-Person-Id` header. Raw browser cookies are never forwarded.
 
@@ -1176,7 +1195,7 @@ The API proxy (`/api/proxy/[...path]`) reads the iron-session server-side, rejec
 Use `swr` for all console data. SWR hooks are defined in `lib/hooks.ts` (e.g., `useMe`, `useOrgs`) -- never inline `useSWR` in components. Every component consuming a SWR hook handles loading, error, and success states. Use `mutate` after write operations to revalidate all affected cache keys.
 
 ```typescript
-// src/lib/api-client.ts
+// src/lib/api-client.ts -- generic proxy client for dashboard CRUD
 export const api: ApiClient = {
   get: <T>(path: string): Promise<T> => request<T>(path),
   post: <T>(path: string, body: unknown): Promise<T> => request<T>(path, { method: 'POST', body }),
@@ -1184,8 +1203,9 @@ export const api: ApiClient = {
   delete: <T>(path: string): Promise<T> => request<T>(path, { method: 'DELETE' }),
 };
 
-// src/lib/api-client.ts -- authenticate() encapsulates login-then-signup logic
-export async function authenticate(email: string): Promise<void>;
+// src/lib/turnkey.ts -- Turnkey passkey helpers
+export function createPasskeyClient(): TurnkeyPasskeyClient;
+export async function createSignupPasskey(params: { email, displayName }): Promise<attestation>;
 ```
 
 ### Adding New Frontend Services
@@ -1219,7 +1239,7 @@ EVMAuth Platform (Turnkey parent org)
 |       the wallets service for routine operations.
 |
 |-- [Person sub-org] -- one per person
-|   +-- Root user: passkey (primary) + OAuth (optional backup)
+|   +-- Root user: passkey (primary) + backup passkey (optional)
 |   +-- HD Wallet (one per person)
 |       |-- Account index 0: person's platform identity
 |       |-- Account for App A (derived per app_registration_id)
@@ -1227,7 +1247,7 @@ EVMAuth Platform (Turnkey parent org)
 |       +-- ...
 |
 +-- [Org sub-org] -- one per organization
-    |-- Root user: the org owner (passkey/OAuth credential)
+    |-- Root user: the org owner (passkey credential)
     |-- Delegated Account user: platform-controlled
     |   +-- API key (P256): scoped to ACTIVITY_TYPE_SIGN_RAW_PAYLOAD only
     +-- HD Wallet (one per org)
@@ -1246,69 +1266,66 @@ EVMAuth Platform (Turnkey parent org)
 | Entity platform account | Entity sub-org HD wallet | Index 0 (fixed) | Platform identity, holds capability tokens (orgs) |
 | Entity app account | Entity sub-org HD wallet | Per app_registration_id | EVMAuth default admin (orgs) or end-user identity (people) |
 
-### Person Signup / Login Flow
+### Deployer Signup Flow
 
-1. Person visits `/auth/login`
-2. Platform presents two options: **Passkey** (primary, recommended) or **Continue with Google/Apple** (OAuth)
-3. For a new user via passkey:
-   a. Frontend uses `@turnkey/sdk-browser` to create a passkey credential
-   b. `POST /auth/people` with attestation and email
-   c. Auth service calls wallets internal API to create entity wallet (Turnkey sub-org + HD wallet) for the person
-   d. Auth service inserts `auth.people` row (trigger auto-creates personal workspace org)
-   e. Auth service calls wallets internal API to create entity wallet + delegated account for the personal workspace org
-   f. Wallets service creates Turnkey sub-org, adds delegated account user with signing-only policy, stores in `wallets.entity_wallets`
-4. Auth service issues a platform session JWT, sets it as an HTTP-only, Secure, SameSite=Strict cookie
-5. Redirect to `/dashboard`
+1. Person visits `/auth/login` and clicks "Create an account"
+2. Frontend collects display name and email, then calls `createSignupPasskey()` from `lib/turnkey.ts`
+3. Browser triggers WebAuthn ceremony via `getWebAuthnAttestation()` from `@turnkey/sdk-browser`
+4. Frontend sends `{ displayName, email, attestation }` to `POST /api/auth/people`
+5. Next.js API route forwards to backend `POST /auth/people` with `{ display_name, primary_email, attestation }`
+6. Auth service:
+   a. Creates `auth.people` row with `auth_provider_name: "turnkey"` (trigger auto-creates personal workspace org)
+   b. Calls wallets `POST /internal/entity-wallet` with passkey attestation to create Turnkey sub-org + HD wallet
+   c. Updates `auth_provider_ref` to the Turnkey sub-org ID
+   d. Creates entity wallet + delegated account for the personal workspace org
+   e. Mints API access capability token to the org wallet (best-effort)
+   f. Issues session JWT with `wallet` claim, sets as HTTP-only cookie
+7. Next.js API route creates iron-session from the response
+8. Redirect to `/dashboard`
 
-For returning users, the passkey prompt is all that's needed.
+### Deployer Login Flow
 
-### End-User Auth Flow (PKCE)
+1. Person visits `/auth/login` and clicks "Sign in with Passkey"
+2. Frontend calls `POST /api/auth/challenges` which proxies to `POST /auth/challenges`
+3. Backend creates a 32-byte hex nonce, stores in Redis with 60s TTL, returns it
+4. Frontend triggers `navigator.credentials.get()` with the challenge -- browser shows passkey prompt
+5. Frontend sends `{ challenge, credential }` to `POST /api/auth/sessions`
+6. Next.js API route forwards `{ wallet_address, signature, challenge }` to backend `POST /auth/sessions`
+7. Auth service:
+   a. Consumes challenge nonce from Redis (single-use)
+   b. Recovers signer via `evm::recover_signer(challenge, signature)`
+   c. Verifies recovered address matches `wallet_address`
+   d. Calls wallets `GET /internal/entity-wallet-by-address/{address}` to look up the person
+   e. Calls `balance_of(platform_contract, wallet_address, API_ACCESS_TOKEN)` -- rejects if zero
+   f. Issues session JWT with `wallet` claim, sets as HTTP-only cookie
+8. Next.js API route creates iron-session from the response
+9. Redirect to `/dashboard`
 
-**Step 1 -- Authorization request** (deployer app -> EVMAuth platform):
+### End-User Onboarding Flow
 
-```
-GET https://auth.evmauth.io/authorize
-  ?client_id=<app_client_id>
-  &redirect_uri=<registered_callback>
-  &state=<random_state>
-  &code_challenge=<S256_hash>
-  &code_challenge_method=S256
-```
+End users authenticate via Turnkey passkey. No JWTs are issued to apps. No auth codes, no PKCE.
 
-**Step 2 -- Platform validates and authenticates:**
-1. Auth service calls registry internal API to validate `client_id` exists and `redirect_uri` is in `callback_urls` -- reject before initiating auth if invalid
-2. User authenticates via OAuth on the EVMAuth hosted UI
-3. Auth service calls wallets internal API to resolve or create end-user sub-org and wallet
-4. Auth service generates authorization code (32 bytes, base64url), stores `SHA-256(code)` in Redis with configurable TTL
-5. Redirects to `redirect_uri?code=<plaintext_code>&state=<state>`
+**Step 1 -- Onboarding** (deployer app redirects user to EVMAuth hosted page, or embeds `@turnkey/sdk-browser`):
 
-**Step 3 -- Token exchange** (deployer backend -> EVMAuth platform):
+1. User visits `/auth/end-user/signup?client_id=<app_client_id>` (optionally with `callback_url`)
+2. User enters email/name and creates a passkey via WebAuthn
+3. Frontend calls `POST /auth/end-users` with `{ email, display_name?, attestation?, client_id }`
+4. Auth service:
+   a. Validates `client_id` via registry internal API
+   b. Finds or creates person record + entity wallet
+   c. Ensures entity app wallet exists for (person, app)
+   d. Returns `{ wallet_address, person_id }`
+5. If `callback_url` was provided, redirects with `?wallet_address=<address>`
+6. The deployer's app mints tokens to this address using their own EVMAuth contract
 
-```
-POST /auth/tokens
-Content-Type: application/x-www-form-urlencoded
+**Step 2 -- Runtime authorization** (deployer's backend -> EVMAuth platform):
 
-grant_type=authorization_code
-&code=<plaintext_code>
-&code_verifier=<original_verifier>
-&redirect_uri=<same_redirect_uri>
-&client_id=<app_client_id>
-```
-
-Backend:
-1. Hash the submitted `code` and look up in Redis by `auth_code:{hash}`
-2. Reject if: not found (expired or already used), `redirect_uri` mismatch, or `SHA-256(code_verifier) != code_challenge`
-3. Delete the key from Redis immediately -- codes are single-use
-4. Auth service calls wallets internal API to get wallet address for the JWT claims
-5. Issue end-user app JWT and return it
-
-```json
-{
-  "access_token": "<JWT>",
-  "token_type": "Bearer",
-  "expires_in": 3600
-}
-```
+1. Deployer's API issues a challenge to the user
+2. User signs the challenge via their Turnkey wallet
+3. Deployer's backend verifies the signature (standard ecrecover)
+4. Deployer's backend calls `GET /registry/accounts/{wallet_address}` with ERC-712 signed request headers
+5. Platform returns live on-chain token balances from the app's EVMAuth contract
+6. Deployer makes authorization decisions based on token holdings
 
 ### Key Export (End Users)
 
@@ -1586,8 +1603,8 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Production Dockerfile (multi-stage build)
 - [x] Turnkey integration: official SDK (`turnkey_client` + `turnkey_api_key_stamper`) used directly by wallets service (replaces custom wrapper crate)
 - [x] Wallets service: scaffold, `wallets` schema migrations, org wallet + person sub-org + person app wallet internal APIs
-- [x] Auth service: session JWT utilities, `RequireSession` middleware, auth code migration
-- [x] Auth service: `GET /me`, `PATCH /me` endpoints (protected by RequireSession middleware)
+- [x] Auth service: session JWT utilities, `require_session` middleware
+- [x] Auth service: `GET /me`, `PATCH /me` endpoints (protected by require_session middleware)
 - [x] Auth service: internal APIs for cross-service person/org lookup (`/internal/people/{id}`, `/internal/orgs/{id}`)
 - [x] Frontend: PNPM workspace scaffolding (`ts/pnpm-workspace.yaml`, root `package.json`, `biome.json`, `tsconfig.json`)
 - [x] Frontend: `@evmauth/ui` package (Mantine theme, ThemeProvider), `@evmauth/tsconfig` package (base + nextjs configs)
@@ -1596,7 +1613,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Docker init scripts for `registry` and `analytics` schemas
 - [x] Workspace resolver set to v3 for edition 2024 compatibility
 - [x] Service `.env.example` files: rewrite all with empty secrets, add missing vars (JWT, wallets URL); create wallets and console env files
-- [x] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
+- [x] Auth service: deployer signup (passkey via Turnkey), HTTP-only session cookie
 - [x] EVM crate: Alloy HTTP provider, EVMAuth6909 bindings (balanceOf, isOperator, encode_mint)
 - [x] Platform contract config (`EVM_PLATFORM_CONTRACT_ADDRESS`, `EVM_RPC_URL`, `EVM_CHAIN_ID`) in auth service
 - [x] ~~Capability token minting on new org creation~~ (removed -- tokens are not auto-minted; managed manually by org owner, via API, or on-chain)
@@ -1636,27 +1653,33 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Internal CLI tool (`evmauth-cli`) for beacon and platform contract deployment
 - [x] Console: App registration pages, contract deployment wizard, role grant management UI
 
-### Phase 3 -- End User Auth
+### Phase 3 -- Auth Architecture (Turnkey + EVMAuth)
 
-- [x] Hosted auth UI (`/authorize`) with `client_id` / `redirect_uri` / PKCE parameter validation (auth calls registry internal API)
-- [x] End user sub-org creation on first login (auth calls wallets internal API)
-- [x] HD wallet account creation per (person, app_registration) via wallets service
-- [x] Authorization code generation, storage (hashed in Redis with TTL), and issuance
-- [x] PKCE token exchange endpoint with code_verifier validation, single-use enforcement (Redis DEL), and expiry check
-- [x] End-user app JWT issuance (auth calls wallets internal API for wallet address)
-- [x] JWKS endpoint (`GET /auth/.well-known/jwks.json`)
-- [x] End-user wallet self-service page (frontend calls wallets service via gateway)
-- [ ] Passkey backup authenticator prompt on first login (deferred -- requires @turnkey/sdk-browser integration)
+- [x] Replace OAuth/PKCE end-user auth with Turnkey passkey onboarding (`POST /end-users`)
+- [x] Replace email+string login with signed challenge nonce verification (`POST /challenges` + `POST /sessions`)
+- [x] Passkey-only deployer signup (remove OAuth signup path)
+- [x] Add `wallet` claim to session JWT; update `AuthenticatedPerson` middleware to include `wallet_address`
+- [x] Delete OAuth/PKCE code: `auth_code.rs`, `end_user.rs`, `jwks.rs`, `/authorize`, `/tokens`, `/.well-known/jwks.json`
+- [x] Remove `EndUserClaims`, `create_end_user_token()`, `auth_code_ttl_secs` config
+- [x] Remove `subtle`, `sha2`, `rsa` dependencies from auth service
+- [x] EVM crate: `signature.rs` with `recover_signer()` (EIP-191) and `verify_accounts_query()` (ERC-712)
+- [x] Wallets service: `get_by_wallet_address()` repo method + `GET /internal/entity-wallet-by-address/{address}`
+- [x] Frontend: Passkey login page (WebAuthn assertion -> challenge -> session)
+- [x] Frontend: Passkey signup page (WebAuthn attestation -> Turnkey sub-org)
+- [x] Frontend: `lib/turnkey.ts` helpers (`createPasskeyClient`, `createSignupPasskey`)
+- [x] Frontend: Challenge proxy route (`/api/auth/challenges`)
+- [x] Hosted end-user signup page (`/auth/end-user/signup`) with passkey + `client_id`
+- [x] End-user wallet self-service page (view wallets, add backup passkey)
 
 ### Phase 4 -- Authorization Query API
 
-- [ ] ERC-712 request signing: define domain, type, and canonical digest
-- [ ] `RequireErc712Auth` middleware in registry service
-- [ ] `GET /registry/accounts/{address}` endpoint
-- [ ] `balances_for` implementation in evm crate
-- [ ] `is_operator` check for delegate flow
+- [x] ERC-712 request signing: domain ("EVMAuth", v1), `AccountsQuery` typed data in evm crate
+- [x] `require_erc712_auth` middleware in registry service (headers: X-Client-Id, X-Signer, X-Signature, X-Nonce, X-Contract)
+- [x] `GET /registry/accounts/{address}` endpoint with on-chain balance queries
+- [x] `balances_for`, `balance_of_contract`, `is_operator_on_contract` in evm crate
+- [x] Delegate verification via `is_operator_on_contract` check
 - [ ] Registry calls analytics internal API to log requests
-- [ ] Deployer-facing SDK (TypeScript): wraps Turnkey delegated account signing into a single `client.accounts(address, contract)` call
+- [ ] Deployer-facing SDK (TypeScript): wraps ERC-712 signing into a single `client.accounts(address, contract)` call
 
 ### Phase 5 -- Analytics & Collaboration
 
@@ -1717,7 +1740,6 @@ PORT=8000
 JWT_PRIVATE_KEY_PEM=...
 JWT_PUBLIC_KEY_PEM=...
 DELEGATED_API_PUBLIC_KEY=...              # Required -- Turnkey delegated API public key
-AUTH_CODE_TTL_SECS=30                     # Default: 30
 WALLETS_SERVICE_URL=http://int-wallets:8000
 RUST_LOG=info,auth=debug
 
@@ -1799,9 +1821,9 @@ SESSION_SECRET=...                    # 32+ chars, required (no hardcoded fallba
 - Turnkey API calls use the official `turnkey_client` SDK which handles retry logic internally via `RetryConfig` (exponential backoff, default 5 attempts). Do not add custom retry wrappers.
 - The platform has two Turnkey-managed HD wallets in the parent org: the **beacon owner wallet** (high-privilege, owns the UpgradeableBeacon and holds admin roles on the platform proxy) and the **platform operator wallet** (routine operations -- deploys proxies, mints/burns capability tokens). All signing goes through the Turnkey SDK via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/signatures` endpoint. No raw private keys in any environment variable.
 - All contract addresses, tx hashes, and wallet addresses are stored as `TEXT` in Postgres (not `BYTEA`), EIP-55 checksummed format. Normalise on insert.
-- The `/authorize` page must validate `redirect_uri` against `callback_urls` **before** initiating the OAuth flow -- never after -- to prevent open redirect attacks. Auth service calls registry internal API to validate.
-- Authorization codes are stored as `SHA-256(plaintext_code)` in Redis with key `auth_code:{hash}` and configurable TTL (default 30s via `AUTH_CODE_TTL_SECS`). The plaintext is returned once in the redirect and never stored. On token exchange, hash the submitted code and look it up in Redis, then delete immediately -- never store or log the plaintext code.
-- The ERC-712 nonce is a Unix timestamp in seconds. Reject requests where `abs(now - nonce) > 30`. This is replay protection, not a monotonic counter.
+- Deployer login uses a challenge-response flow: `POST /challenges` creates a nonce in Redis (60s TTL), the client signs it with their wallet key, and `POST /sessions` verifies via `ecrecover` + `balance_of` check. No passwords, no OAuth, no PKCE.
+- The ERC-712 nonce for `/accounts` queries embeds a Unix timestamp in the first 8 bytes. Reject requests where `abs(now - nonce) > 30`. This is replay protection, not a monotonic counter.
+- The evm crate `signature` module only performs signature **verification** (ecrecover). All transaction signing goes through Turnkey via the wallets service.
 - The Turnkey delegated account policy must be set at org sub-org creation time and must restrict to `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` only. The wallets service owns this concern.
 - Session cookies must be: `HttpOnly`, `Secure`, `SameSite=Strict`.
 - The platform EVMAuth contract must be deployed and its address recorded in config before any org can be created. The registry service should verify `EVM_PLATFORM_CONTRACT_ADDRESS` is reachable on Radius at startup.

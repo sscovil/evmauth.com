@@ -10,6 +10,11 @@ import { z } from 'zod';
 const SignupRequestSchema = z.object({
     displayName: z.string().min(1),
     email: z.string().email(),
+    attestation: z.object({
+        authenticator_name: z.string(),
+        challenge: z.string(),
+        attestation: z.unknown(),
+    }),
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -17,17 +22,20 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!parsed.success) {
         return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    const { displayName, email } = parsed.data;
+    const { displayName, email, attestation } = parsed.data;
 
-    // Call backend signup
+    // Call backend signup with passkey attestation
     const signupResponse = await fetch(`${config.backendUrl}/auth/people`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             display_name: displayName,
             primary_email: email,
-            auth_provider_name: 'email',
-            auth_provider_ref: email,
+            attestation: {
+                authenticator_name: attestation.authenticator_name,
+                challenge: attestation.challenge,
+                attestation: attestation.attestation,
+            },
         }),
     });
 

@@ -12,16 +12,20 @@ use super::handlers::internal;
 use super::openapi::ApiDoc;
 
 async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
-    #[cfg(feature = "internal-api")]
-    {
-        use super::handlers::internal::InternalApiDoc;
-        let mut spec = ApiDoc::openapi();
-        spec.merge(InternalApiDoc::openapi());
-        return Json(spec);
-    }
+    let spec = ApiDoc::openapi();
+    Json(merge_internal_spec(spec))
+}
 
-    #[cfg(not(feature = "internal-api"))]
-    Json(ApiDoc::openapi())
+#[cfg(feature = "internal-api")]
+fn merge_internal_spec(mut spec: utoipa::openapi::OpenApi) -> utoipa::openapi::OpenApi {
+    use super::handlers::internal::InternalApiDoc;
+    spec.merge(InternalApiDoc::openapi());
+    spec
+}
+
+#[cfg(not(feature = "internal-api"))]
+fn merge_internal_spec(spec: utoipa::openapi::OpenApi) -> utoipa::openapi::OpenApi {
+    spec
 }
 
 pub fn api_routes(_state: AppState) -> Router<AppState> {
@@ -47,6 +51,10 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
         .route(
             "/internal/entity-wallet/{entity_id}",
             get(internal::entity_wallets::get_entity_wallet),
+        )
+        .route(
+            "/internal/entity-wallet-by-address/{address}",
+            get(internal::entity_wallets::get_entity_wallet_by_address),
         )
         .route(
             "/internal/entity-app-wallet",
