@@ -52,7 +52,7 @@ use crate::dto::response::{
     ),
     tags(
         (name = "health", description = "Health check endpoints"),
-        (name = "accounts", description = "On-chain account balance queries (ERC-712 authenticated)"),
+        (name = "accounts", description = "On-chain account balance queries"),
         (name = "app_registrations", description = "App registration management"),
         (name = "contracts", description = "Contract deployment and role management")
     )

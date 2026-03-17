@@ -41,7 +41,7 @@ The platform has two entity types: **people** and **orgs**. Each entity gets its
 | **Platform operator** | EVMAuth (you). Owns the platform operator wallet. Deploys BeaconProxy contracts, pays gas, mints/burns capability tokens on the platform proxy (`MINTER_ROLE`, `BURNER_ROLE`). Frequently used by the wallets service for routine operations. |
 | **Deployer** | An org that registers an app and requests an EVMAuth proxy contract deployment. The platform operator wallet deploys the proxy and pays gas. At initialization, the org's default HD wallet address (index 0) receives `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles. The org owner can then assign roles to other addresses (derived wallets, the platform operator, or external addresses) and revoke non-admin roles from the org's default address. The org owner signs transactions for the org's wallet via a Turnkey policy; transferring org ownership updates the policy so the new owner gains signing authority. |
 | **End user** | A person who is a customer of a deployer's app. Authenticates via the platform's hosted auth flow; per-app wallet accounts are derived from their HD wallet. |
-| **Delegate / Agent** | An address granted `operator` rights by an end user via ERC-6909 `setOperator`. Can call the authorization API on the principal's behalf. |
+| **Delegate / Agent** | An address granted `operator` rights by a wallet owner via ERC-6909 `setOperator`. An operator can transfer tokens on behalf of the owner. In the `/accounts` query, a delegate can query a principal's token balances -- verified via `isOperator(owner, delegate)` on-chain. |
 
 ### Core Platform Responsibilities
 
@@ -944,18 +944,9 @@ pub struct AppState {
 
 ### Auth Middleware
 
-Two middleware layers used across services:
+One middleware layer:
 
-1. **`require_session`** (auth service) -- validates the platform session JWT from a `session=` cookie or `Authorization: Bearer` header. Extracts `AuthenticatedPerson { person_id, wallet_address }` into request extensions.
-
-2. **`require_erc712_auth`** (registry service) -- authenticates requests to the `/accounts` endpoint. The caller must include five headers:
-    - `X-Client-Id` -- identifies the app registration (public lookup key)
-    - `X-Signer` -- the wallet address that produced the signature
-    - `X-Signature` -- hex-encoded ERC-712 signature over the canonical request digest
-    - `X-Nonce` -- hex-encoded 32-byte nonce (first 8 bytes = Unix timestamp; rejected if >30s old)
-    - `X-Contract` -- the contract address being queried
-
-   The middleware recovers the signer via `verify_accounts_query()` from the evm crate, then calls `balanceOf(platform_contract, signer, TOKEN_ID_API_ACCESS)`. If the balance is zero, the request is rejected with 403. Inserts `Erc712AuthContext { signer, client_id }` into request extensions.
+**`require_session`** (auth service) -- validates the platform session JWT from a `session=` cookie or `Authorization: Bearer` header. Extracts `AuthenticatedPerson { person_id, wallet_address }` into request extensions. Used on `/me` and `/me/authenticators` routes.
 
 ### JWT Strategy
 

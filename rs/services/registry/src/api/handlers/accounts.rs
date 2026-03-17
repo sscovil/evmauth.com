@@ -1,5 +1,5 @@
 use axum::{
-    Extension, Json,
+    Json,
     extract::{Path, Query, State},
 };
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,6 @@ use utoipa::ToSchema;
 
 use crate::AppState;
 use crate::api::error::ApiError;
-use crate::middleware::Erc712AuthContext;
 
 /// Query parameters for the accounts endpoint.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -55,9 +54,8 @@ pub struct AccountsResponse {
 
 /// Query on-chain token balances for an account.
 ///
-/// Requires ERC-712 signed request (headers: X-Client-Id, X-Signer, X-Signature,
-/// X-Nonce, X-Contract). Optionally verifies a delegate address as an operator.
-/// Returns live on-chain token balances from the specified EVMAuth6909 contract.
+/// Public endpoint -- reads live on-chain state from the specified EVMAuth6909
+/// contract. Optionally verifies a delegate address as an operator.
 #[utoipa::path(
     get,
     path = "/accounts/{address}",
@@ -76,7 +74,6 @@ pub struct AccountsResponse {
 )]
 pub async fn get_account(
     State(state): State<AppState>,
-    Extension(_auth): Extension<Erc712AuthContext>,
     Path(address): Path<String>,
     Query(params): Query<AccountsQuery>,
 ) -> Result<Json<AccountsResponse>, ApiError> {
@@ -111,10 +108,9 @@ pub async fn get_account(
         }
     }
 
-    // Look up relevant token IDs for this contract/app
-    // For now, query a standard set of token IDs (1-10) which covers typical usage.
-    // TODO: look up relevant_token_ids from the app registration once we have the
-    // client_id -> app -> relevant_token_ids mapping available in this handler.
+    // Query a standard set of token IDs (1-10) which covers typical usage.
+    // TODO: accept token_ids as a query parameter or look up relevant_token_ids
+    // from the app registration via client_id.
     let token_ids: Vec<evm::U256> = (1u64..=10).map(evm::U256::from).collect();
 
     let balances = state
