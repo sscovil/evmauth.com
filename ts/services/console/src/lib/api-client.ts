@@ -42,7 +42,7 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
  * exist (401/404), falls back to signup automatically.
  */
 export async function authenticate(email: string): Promise<void> {
-    const loginResponse = await fetch('/api/auth/login', {
+    const loginResponse = await fetch('/api/auth/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -55,7 +55,7 @@ export async function authenticate(email: string): Promise<void> {
 
     if (loginResponse.status === 401 || loginResponse.status === 404) {
         const displayName = email.split('@')[0] ?? email;
-        const signupResponse = await fetch('/api/auth/signup', {
+        const signupResponse = await fetch('/api/auth/people', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ displayName, email }),

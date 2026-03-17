@@ -34,6 +34,11 @@ pub trait ContractRepository: Send + Sync {
         org_id: Uuid,
         page: &Page,
     ) -> Result<Vec<Contract>, RepositoryError>;
+
+    async fn get_by_app_registration_id(
+        &self,
+        app_registration_id: Uuid,
+    ) -> Result<Option<Contract>, RepositoryError>;
 }
 
 pub struct ContractRepositoryImpl<'a> {
@@ -135,5 +140,24 @@ impl<'a> ContractRepository for ContractRepositoryImpl<'a> {
         pagination::reverse_if_backward(&mut results, page);
 
         Ok(results)
+    }
+
+    async fn get_by_app_registration_id(
+        &self,
+        app_registration_id: Uuid,
+    ) -> Result<Option<Contract>, RepositoryError> {
+        let contract = sqlx::query_as!(
+            Contract,
+            r#"
+            SELECT id, org_id, app_registration_id, name, address, chain_id, beacon_address, deploy_tx_hash, deployed_at, created_at, updated_at
+            FROM registry.contracts
+            WHERE app_registration_id = $1
+            "#,
+            app_registration_id
+        )
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(contract)
     }
 }

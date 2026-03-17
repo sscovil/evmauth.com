@@ -2,7 +2,6 @@ use axum::{
     Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use pagination::{PaginatedResponse, with_pagination};
 use serde::Deserialize;
@@ -11,7 +10,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::api::error::ApiError;
-use crate::dto::request::{CreatePerson, UpdatePerson};
+use crate::dto::request::UpdatePerson;
 use crate::dto::response::PersonResponse;
 use crate::repository::filter::PersonFilter;
 use crate::repository::person::{PersonRepository, PersonRepositoryImpl};
@@ -81,26 +80,6 @@ pub async fn get_person(
     let repo = PersonRepositoryImpl::new(&state.db);
     let person = repo.get(id).await?.ok_or(ApiError::NotFound)?;
     Ok(Json(person.into()))
-}
-
-#[utoipa::path(
-    post,
-    path = "/people",
-    request_body = CreatePerson,
-    responses(
-        (status = 201, description = "Person created successfully", body = PersonResponse),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "people"
-)]
-pub async fn create_person(
-    State(state): State<AppState>,
-    Json(create): Json<CreatePerson>,
-) -> Result<impl IntoResponse, ApiError> {
-    let repo = PersonRepositoryImpl::new(&state.db);
-    let person = repo.create(create).await?;
-    Ok((StatusCode::CREATED, Json(PersonResponse::from(person))))
 }
 
 #[utoipa::path(

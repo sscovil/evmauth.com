@@ -64,7 +64,7 @@ pub struct SendTxResponse {
 /// returns the computed contract address.
 #[utoipa::path(
     post,
-    path = "/internal/send-tx",
+    path = "/internal/transactions",
     request_body = SendTxRequest,
     responses(
         (status = 200, description = "Transaction broadcast successfully", body = SendTxResponse),

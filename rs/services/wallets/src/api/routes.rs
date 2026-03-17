@@ -56,8 +56,11 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
             "/internal/entity-app-wallet/{entity_id}/{app_id}",
             get(internal::entity_app_wallets::get_entity_app_wallet),
         )
-        .route("/internal/sign", post(internal::signing::sign_payload))
-        .route("/internal/send-tx", post(internal::send_tx::send_tx))
+        .route(
+            "/internal/signatures",
+            post(internal::signing::sign_payload),
+        )
+        .route("/internal/transactions", post(internal::send_tx::send_tx))
         .route(
             "/internal/authenticators",
             post(internal::authenticators::create_authenticators),

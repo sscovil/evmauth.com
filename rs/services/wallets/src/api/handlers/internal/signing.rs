@@ -47,7 +47,7 @@ pub struct SignResponse {
 /// using the Turnkey API.
 #[utoipa::path(
     post,
-    path = "/internal/sign",
+    path = "/internal/signatures",
     request_body = SignRequest,
     responses(
         (status = 200, description = "Payload signed successfully", body = SignResponse),

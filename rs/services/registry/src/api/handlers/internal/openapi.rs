@@ -7,6 +7,7 @@ use crate::dto::response::{AppRegistrationResponse, ContractResponse};
     paths(
         crate::api::handlers::internal::app_registrations::get_app_by_client_id,
         crate::api::handlers::internal::contracts::get_contract_internal,
+        crate::api::handlers::internal::contracts::get_contract_by_app_registration_id,
     ),
     components(
         schemas(

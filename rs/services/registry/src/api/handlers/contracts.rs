@@ -47,7 +47,7 @@ async fn send_tx_via_wallets(
     tokio::time::timeout(WALLETS_SERVICE_TIMEOUT, async {
         state
             .http_client
-            .post(format!("{wallets_url}/internal/send-tx"))
+            .post(format!("{wallets_url}/internal/transactions"))
             .json(request)
             .send()
             .await

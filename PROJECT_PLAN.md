@@ -2,7 +2,7 @@
 
 > **Audience:** Claude Code
 > **Purpose:** End-to-end implementation guide for the EVMAuth managed service platform
-> **Last updated:** 2026-03-15 (rev 12)
+> **Last updated:** 2026-03-17 (rev 13)
 
 ---
 
@@ -29,19 +29,23 @@
 
 EVMAuth is an authorization state management system built on the ERC-6909 multi-token standard. This platform offers EVMAuth as a managed service: deployers register their apps, the platform deploys EVMAuth beacon proxy contracts on their behalf on the Radius Network, and the platform exposes an OIDC-like authentication flow plus a runtime authorization query API.
 
+### Entities: People and Orgs
+
+The platform has two entity types: **people** and **orgs**. Each entity gets its own Turnkey sub-org and HD wallet. People are individual users; orgs are groups that people belong to (with `owner`, `admin`, or `member` roles). Every person gets a personal workspace org on signup. An "app" on this platform is an org-owned proxy contract. A person's HD wallet uses app-specific derived addresses to hold EVMAuth tokens for a given app. A person can be both a deployer (via an org they own) and an end user of other apps simultaneously.
+
 ### Key Actors
 
 | Actor | Description |
 |---|---|
 | **Beacon owner** | EVMAuth (you). Owns the Turnkey parent org and the beacon owner wallet. Controls the UpgradeableBeacon contract (can upgrade logic for all proxies). Holds `DEFAULT_ADMIN_ROLE`, `TOKEN_MANAGER_ROLE`, `ACCESS_MANAGER_ROLE`, and `TREASURER_ROLE` on the platform proxy. Rarely used, high-privilege. |
 | **Platform operator** | EVMAuth (you). Owns the platform operator wallet. Deploys BeaconProxy contracts, pays gas, mints/burns capability tokens on the platform proxy (`MINTER_ROLE`, `BURNER_ROLE`). Frequently used by the wallets service for routine operations. |
-| **Deployer** | A user or organization that registers an app and deploys an EVMAuth proxy contract. Administers their contract's EVMAuth roles via their org's Turnkey sub-org HD wallet (per-app derived accounts). The platform operator wallet deploys and owns the proxy at the EVM level. |
-| **End user** | A customer of a deployer's app. Authenticates via the platform's hosted auth flow. Gets a personal Turnkey sub-org with an HD wallet; per-app accounts are derived from it. |
+| **Deployer** | An org that registers an app and requests an EVMAuth proxy contract deployment. The platform operator wallet deploys the proxy and pays gas. At initialization, the org's default HD wallet address (index 0) receives `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles. The org owner can then assign roles to other addresses (derived wallets, the platform operator, or external addresses) and revoke non-admin roles from the org's default address. The org owner signs transactions for the org's wallet via a Turnkey policy; transferring org ownership updates the policy so the new owner gains signing authority. |
+| **End user** | A person who is a customer of a deployer's app. Authenticates via the platform's hosted auth flow; per-app wallet accounts are derived from their HD wallet. |
 | **Delegate / Agent** | An address granted `operator` rights by an end user via ERC-6909 `setOperator`. Can call the authorization API on the principal's behalf. |
 
 ### Core Platform Responsibilities
 
-- Manage Turnkey sub-org lifecycle for deployers and end users
+- Manage Turnkey sub-org lifecycle for people and orgs
 - Deploy and upgrade EVMAuth beacon proxy contracts on Radius
 - Use the platform's own EVMAuth contract for access control -- API access rights are ERC-6909 token holdings, not secrets
 - Issue signed JWTs containing wallet address and contract reference (authentication only -- not authorization claims)
@@ -349,7 +353,7 @@ Note: `jsonwebtoken` is already in workspace dependencies (used by auth service)
 | `pnpm` | Package manager (workspace-native) | Root |
 | `next` latest stable | Framework | `ts/services/console` |
 | `@mantine/core` + `@mantine/hooks` + `@mantine/form` + `@mantine/notifications` | UI components | `ts/packages/ui` |
-| `iron-session` | Encrypted cookie sessions (deployer console auth) | `ts/services/console` |
+| `iron-session` | Encrypted cookie sessions (console auth) | `ts/services/console` |
 | `swr` | Data fetching / cache invalidation | `ts/services/console` |
 | `zod` | Runtime validation (API request/response schemas) | `ts/services/console` |
 | `@types/cookie` | Type definitions for iron-session's cookie dependency | `ts/services/console` (devDependency) |
@@ -418,13 +422,13 @@ Members have roles: `owner`, `admin`, `member`.
 
 Junction table with `org_id`, `member_id`, `role`. Database triggers sync the owner role with `auth.orgs.owner_id` and validate membership constraints.
 
-### EntityWallet (wallets service -- to build)
+### EntityWallet (wallets service -- existing as `wallets.entity_wallets`)
 
 A Turnkey sub-org and HD wallet for any entity (person or org). One per entity. Contains the Turnkey sub-org ID, HD wallet ID, first-derived wallet address (index 0, used as platform identity), and optional delegated account user ID. For orgs, the delegated account holds a P256 API key scoped by Turnkey policy to `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` only. Replaces both `person_turnkey_refs` and `org_wallets`.
 
-### EntityAppWallet (wallets service -- to build)
+### EntityAppWallet (wallets service -- existing as `wallets.entity_app_wallets`)
 
-An HD wallet account derived for a specific (entity, app_registration) pair. For orgs, this derived address becomes the EVMAuth default admin for the app's proxy contract. For people, this is the end user's identity within that app. Created when an app registration is created (for orgs) or when an end user first authenticates (for people). Replaces `person_app_wallets` and adds org app wallet support.
+An HD wallet account derived for a specific (entity, app_registration) pair. For orgs, derived addresses are optional -- created on-demand by the org owner and can be assigned specific EVMAuth roles on the org's proxy contracts. For people, this is the end user's identity within that app, created automatically when they first authenticate. Replaces `person_app_wallets` and adds org app wallet support.
 
 ### AppRegistration (registry service -- partial)
 
@@ -434,11 +438,11 @@ There are no client secrets. Access to the authorization query API is controlled
 
 One org can have many app registrations, each pointing to a different EVMAuth proxy contract.
 
-When an app registration is created, the wallets service derives an org app-admin wallet account for that app from the org's HD wallet. This derived address becomes the EVMAuth default admin for the app's deployed proxy contract.
+The org owner can optionally create derived wallet addresses (via the wallets service) and assign specific EVMAuth roles to them on the app's proxy contract. The org's default HD wallet address (index 0) holds `DEFAULT_ADMIN_ROLE` and all initial roles.
 
 ### Contract (registry service -- partial)
 
-An EVMAuth beacon proxy deployed on Radius. Belongs to an org. The proxy is deployed by the platform operator wallet (which pays gas and owns the proxy at the EVM level for upgradeability), but the EVMAuth default admin role is set to the org's app-specific derived address (from EntityAppWallet). The platform can upgrade the beacon implementation (affecting all proxies), but only the org controls EVMAuth role administration on their contract. Contains the on-chain contract address, deployment transaction hash, and the beacon implementation address at time of deployment.
+An EVMAuth beacon proxy deployed on Radius. Belongs to an org. The proxy is deployed by the platform operator wallet (which pays gas), but at initialization, `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles are assigned to the org's default HD wallet address (index 0). The platform can upgrade the beacon implementation (affecting all proxies), but only the org controls EVMAuth role administration on their contract. The org owner can assign roles to other addresses (including the platform operator for programmatic API access) and revoke non-admin roles from the org's default address. Contains the on-chain contract address, deployment transaction hash, and the beacon implementation address at time of deployment.
 
 ### PlatformContract
 
@@ -458,10 +462,10 @@ The platform's own EVMAuth proxy contract (a BeaconProxy), deployed on Radius. T
 | `TOKEN_MANAGER_ROLE` | Beacon owner wallet | Can call `createToken`, `updateToken`, `setTokenMetadata`. Defines new capability token types (rare). |
 | `ACCESS_MANAGER_ROLE` | Beacon owner wallet | Can call `freezeAccount`/`unfreezeAccount`. Emergency action (rare). |
 | `TREASURER_ROLE` | Beacon owner wallet | Can call `setTreasury`. Changes where purchase revenue goes (rare). |
-| `MINTER_ROLE` | Platform operator wallet | Can call `mint(to, id, amount)`. Mints capability tokens on org creation (frequent). |
-| `BURNER_ROLE` | Platform operator wallet | Can call `burn(from, id, amount)`. Burns capability tokens on org deletion/revocation (frequent). |
+| `MINTER_ROLE` | Platform operator wallet | Can call `mint(to, id, amount)`. Mints capability tokens when requested. |
+| `BURNER_ROLE` | Platform operator wallet | Can call `burn(from, id, amount)`. Burns capability tokens when requested. |
 
-When a deployer registers an org, the platform operator mints capability tokens to the org's first HD wallet account (index 0, derived at org creation time). This address serves as the org's platform identity. Revoking access is a burn -- no secrets to rotate, no database records to invalidate.
+Capability tokens are not minted automatically on org creation. Minting is done manually by the org owner via the console, programmatically via the platform API (if the org grants the platform operator the appropriate role on their contract), or directly on-chain by any address with the appropriate role. The org's first HD wallet account (index 0) serves as the org's platform identity. Revoking access is a burn -- no secrets to rotate, no database records to invalidate.
 
 ### File / Doc / Image / Media (assets service -- existing as `assets.*`)
 
@@ -498,7 +502,7 @@ TTL:    Configurable via AUTH_CODE_TTL_SECS (default 30 seconds)
 - Exchange: `GET auth_code:{hash}` then `DEL auth_code:{hash}` (atomic via Redis transaction or Lua script)
 - No cleanup task needed -- expired keys vanish automatically
 
-### `wallets` Schema (wallets service -- to build)
+### `wallets` Schema (wallets service -- existing)
 
 ```sql
 -- Migration: wallets_create_schema
@@ -607,12 +611,13 @@ CREATE TRIGGER but_contracts_moddatetime
     FOR EACH ROW
 EXECUTE FUNCTION moddatetime(updated_at);
 
--- EVMAuth role grants: platform operator roles granted on deployer contracts.
--- Each row tracks a grantRole/revokeRole lifecycle for a specific role.
+-- EVMAuth role grants on deployer contracts.
+-- Each row tracks a grantRole/revokeRole lifecycle for a specific (role, address) pair.
 CREATE TABLE registry.role_grants (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     contract_id     UUID NOT NULL REFERENCES registry.contracts(id) ON DELETE CASCADE,
     role            TEXT NOT NULL,           -- EVMAuth role name (e.g. 'MINTER_ROLE')
+    grantee         TEXT NOT NULL,           -- address receiving the role (EIP-55 checksummed)
     grant_tx_hash   TEXT NOT NULL,
     revoke_tx_hash  TEXT,
     active          BOOLEAN NOT NULL DEFAULT true,
@@ -744,8 +749,8 @@ Services call each other via internal HTTP APIs (feature-gated `/internal/*` rou
 | auth | wallets (internal) | Create entity app wallet for person during PKCE flow |
 | auth | wallets (internal) | Add user to org's Turnkey sub-org when invited to join org |
 | auth | registry (internal) | Validate `client_id` and `redirect_uri` during PKCE flow |
-| registry | wallets (internal) | Create entity app wallet when app registration is created |
-| registry | wallets (internal) | Look up org's entity app wallet address for contract deployment |
+| registry | wallets (internal) | Look up org's entity wallet address (index 0) for contract deployment |
+| registry | wallets (internal) | Create entity app wallet when org owner requests a derived address |
 | registry | wallets (internal) | Sign transactions via delegated account |
 | registry | analytics (internal) | Log API request after accounts query |
 | analytics | registry (internal) | Look up contract metadata for event indexing |
@@ -767,8 +772,8 @@ Services call each other via internal HTTP APIs (feature-gated `/internal/*` rou
 ```
 /auth/                              # Via gateway: /auth/*
 ├── auth/                           # Authentication flows
-│   ├── POST   /signup              # Deployer signup
-│   ├── POST   /login               # Deployer login
+│   ├── POST   /signup              # Person signup
+│   ├── POST   /login               # Person login
 │   ├── POST   /callback            # OIDC callback
 │   ├── POST   /logout              # Clear session
 │   ├── GET    /end-user/authorize  # Initiate end-user PKCE auth
@@ -937,7 +942,7 @@ Three middleware layers used across services:
 
 ### JWT Strategy
 
-**Platform session JWT** (deployer console): RS256, signed with platform private key. Claims:
+**Platform session JWT** (console): RS256, signed with platform private key. Claims:
 
 ```json
 {
@@ -949,7 +954,7 @@ Three middleware layers used across services:
 }
 ```
 
-**End-user app JWT** (issued to deployer apps): RS256, same signing key. Claims:
+**End-user app JWT** (issued to apps via PKCE flow): RS256, same signing key. Claims:
 
 ```json
 {
@@ -997,7 +1002,7 @@ Uses Alloy to interact with Radius. Provides a read-only HTTP provider and typed
 
 `EvmConfig` is a plain data struct -- it does not read environment variables. The consuming service is responsible for populating it from its own config source.
 
-Signing is not handled by the evm crate. The wallets service owns Turnkey signing; other services encode calldata via `encode_mint()` and POST it to the wallets service `/internal/sign` endpoint.
+Signing is not handled by the evm crate. The wallets service owns Turnkey signing; other services encode calldata via `encode_mint()` and POST it to the wallets service `/internal/signatures` endpoint.
 
 ```rust
 pub struct EvmConfig {
@@ -1028,7 +1033,7 @@ pub fn encode_beacon_proxy_deploy(beacon: Address, init_data: Bytes) -> Result<B
 
 All RPC calls are wrapped in `tokio::time::timeout` (10s) to prevent hangs from unresponsive nodes. The `EvmError` enum includes a `Timeout` variant for this.
 
-`encode_initialize()` builds the ABI-encoded calldata for the proxy's `initialize()` function, granting all non-admin roles to the platform operator and setting the org's app-specific address as default admin.
+`encode_initialize()` builds the ABI-encoded calldata for the proxy's `initialize()` function, granting `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles to the org's default HD wallet address (index 0).
 
 Future additions: `balances_for` (batch query for multiple token IDs).
 
@@ -1061,7 +1066,7 @@ Type: AccountsQuery
 1. Validate `X-Signature` is a valid ERC-712 signature recovering to `X-Signer`
 2. Reject if `nonce` (timestamp) is older than 30 seconds
 3. Call `balanceOf(platform_contract, X-Signer, TOKEN_ID_API_ACCESS)` on Radius -- reject with `403` if zero
-4. Verify `X-Client-Id` resolves to an app registration whose org's entity app wallet address (from `wallets.entity_app_wallets`) matches `X-Signer` (or has `X-Signer` as an approved operator via `isOperator`)
+4. Verify `X-Client-Id` resolves to an app registration whose org's entity wallet address (from `wallets.entity_wallets`, index 0) matches `X-Signer` (or has `X-Signer` as an approved operator via `isOperator`)
 5. If `delegate` query param is present: call `is_operator(contract, address, delegate)` -- reject with `403` if false
 6. Query `balance_of` for each token ID in `relevant_token_ids` for the principal address
 7. Call analytics internal API to log the request
@@ -1150,8 +1155,8 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 | `/dashboard/[orgSlug]/contracts/[contractId]` | Contract details -- address, role grant status, block explorer link |
 | `/dashboard/[orgSlug]/members` | Manage org members |
 | `/dashboard/[orgSlug]/settings` | Org settings |
-| `/auth/login` | Deployer login (passkey / OAuth via Turnkey) |
-| `/auth/callback` | OAuth callback (deployer) |
+| `/auth/login` | Console login (passkey / OAuth via Turnkey) |
+| `/auth/callback` | OAuth callback (console) |
 | `/auth/end-user/login` | Hosted end-user auth page (shown to end users of deployer apps) |
 | `/auth/end-user/callback` | End-user OAuth callback; completes PKCE code issuance |
 | `/auth/wallet` | End-user self-service -- key export, linked apps |
@@ -1160,7 +1165,7 @@ The proxy also handles the one case where the frontend does need to talk to Turn
 
 The frontend uses `iron-session` for encrypted cookie-based sessions. The iron-session cookie (`evmauth-console`) stores `{ personId, email, displayName }` with `httpOnly: true`, `secure` in production, `sameSite: 'strict'`, and 8-hour max age. The `SESSION_SECRET` is loaded via `lib/config.ts` which throws if the env var is missing (no hardcoded fallback).
 
-Next.js API routes (`/api/auth/login`, `/api/auth/signup`, `/api/auth/logout`) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the console manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
+Next.js API routes (`/api/auth/sessions` POST/DELETE, `/api/auth/people` POST) call the backend, validate responses with Zod schemas, then create/destroy the iron-session. Backend `Set-Cookie` headers are never forwarded to the browser -- the console manages its own session exclusively. The `/api/auth/me` route returns the iron-session data for client-side session checks.
 
 The API proxy (`/api/proxy/[...path]`) reads the iron-session server-side, rejects unauthenticated requests, and forwards requests to the backend with an `X-Person-Id` header. Raw browser cookies are never forwarded.
 
@@ -1241,18 +1246,17 @@ EVMAuth Platform (Turnkey parent org)
 | Entity platform account | Entity sub-org HD wallet | Index 0 (fixed) | Platform identity, holds capability tokens (orgs) |
 | Entity app account | Entity sub-org HD wallet | Per app_registration_id | EVMAuth default admin (orgs) or end-user identity (people) |
 
-### Deployer Signup / Login Flow
+### Person Signup / Login Flow
 
-1. Deployer visits `/auth/login`
+1. Person visits `/auth/login`
 2. Platform presents two options: **Passkey** (primary, recommended) or **Continue with Google/Apple** (OAuth)
 3. For a new user via passkey:
    a. Frontend uses `@turnkey/sdk-browser` to create a passkey credential
-   b. `POST /auth/auth/signup` with attestation and email
+   b. `POST /auth/people` with attestation and email
    c. Auth service calls wallets internal API to create entity wallet (Turnkey sub-org + HD wallet) for the person
    d. Auth service inserts `auth.people` row (trigger auto-creates personal workspace org)
    e. Auth service calls wallets internal API to create entity wallet + delegated account for the personal workspace org
    f. Wallets service creates Turnkey sub-org, adds delegated account user with signing-only policy, stores in `wallets.entity_wallets`
-   g. Platform mints capability token(s) to the org's platform identity address (entity wallet index 0) on the platform EVMAuth contract
 4. Auth service issues a platform session JWT, sets it as an HTTP-only, Secure, SameSite=Strict cookie
 5. Redirect to `/dashboard`
 
@@ -1263,7 +1267,7 @@ For returning users, the passkey prompt is all that's needed.
 **Step 1 -- Authorization request** (deployer app -> EVMAuth platform):
 
 ```
-GET https://auth.evmauth.io/auth/end-user/login
+GET https://auth.evmauth.io/authorize
   ?client_id=<app_client_id>
   &redirect_uri=<registered_callback>
   &state=<random_state>
@@ -1281,7 +1285,7 @@ GET https://auth.evmauth.io/auth/end-user/login
 **Step 3 -- Token exchange** (deployer backend -> EVMAuth platform):
 
 ```
-POST /auth/auth/end-user/token
+POST /auth/tokens
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
@@ -1333,41 +1337,39 @@ The **platform operator wallet** deploys new BeaconProxy contracts (one per depl
 
 ### Deployment Flow
 
-Deployment happens in two phases:
+**Step 1 -- App registration:**
 
-**Phase 1 -- App registration creation:**
+1. Org owner creates an app registration in the console (`POST /registry/orgs/{org_id}/apps`)
+2. Registry inserts `registry.app_registrations` row with client ID, callback URLs, and relevant token IDs
 
-1. Deployer creates an app registration in the console (`POST /registry/orgs/{org_id}/apps`)
-2. Registry service calls wallets `POST /internal/entity-app-wallet` with `{ entity_id: org_id, app_registration_id }`
-3. Wallets service derives a new account from the org's HD wallet, stores in `wallets.entity_app_wallets`
-4. The derived address will become the EVMAuth default admin for this app's proxy contract
+**Step 2 -- Contract deployment:**
 
-**Phase 2 -- Contract deployment:**
-
-1. Deployer navigates to "Deploy Contract" (`POST /registry/orgs/{org_id}/contracts`)
-2. Registry service looks up org's app wallet via `GET /internal/entity-app-wallet/{org_id}/{app_id}`
-3. Registry encodes BeaconProxy deployment with init_data setting EVMAuth default admin to the org's app-specific derived address
-4. Registry calls wallets `POST /internal/send-tx` to deploy (platform operator wallet pays gas and owns the proxy at the EVM level)
+1. Org owner navigates to "Deploy Contract" (`POST /registry/orgs/{org_id}/contracts`)
+2. Registry service looks up org's entity wallet via `GET /internal/entity-wallet/{org_id}`
+3. Registry encodes BeaconProxy deployment with init_data granting `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles to the org's default HD wallet address (index 0)
+4. Registry calls wallets `POST /internal/transactions` to deploy (platform operator wallet pays gas)
 5. Registry inserts `registry.contracts` row
 6. Console displays the new contract with a block explorer link
 
 ### Role Management
 
-At deployment time, the `initialize()` call grants all non-admin roles (TOKEN_MANAGER, ACCESS_MANAGER, TREASURER, MINTER, BURNER) to the platform operator wallet. The org's app-specific derived address receives `DEFAULT_ADMIN_ROLE`. This means the platform can immediately operate on the contract (mint, burn, manage tokens) without a separate grant step.
+At deployment time, the `initialize()` call grants `DEFAULT_ADMIN_ROLE` and all other EVMAuth roles (TOKEN_MANAGER, ACCESS_MANAGER, TREASURER, MINTER, BURNER) to the org's default HD wallet address (index 0). The org owner has full control over role administration from the start.
 
-Post-deployment, deployers can manage platform operator roles via the console:
+Post-deployment, the org owner can manage roles via the console:
 
-**Granting a role:**
-1. Deployer clicks "Grant Role" and selects a role name (e.g., MINTER_ROLE)
-2. Frontend calls `POST /registry/orgs/{org_id}/contracts/{id}/roles` with `{ "role": "MINTER_ROLE" }`
-3. Registry service encodes `grantRole(role, platformOperatorAddress)` and calls wallets internal API to sign and broadcast via the org's delegated account
+**Granting a role to an address:**
+1. Org owner clicks "Grant Role", selects a role name (e.g., MINTER_ROLE), and enters a target address (platform operator, a derived wallet, or any external address)
+2. Frontend calls `POST /registry/orgs/{org_id}/contracts/{id}/roles` with `{ "role": "MINTER_ROLE", "address": "0x..." }`
+3. Registry service encodes `grantRole(role, address)` and calls wallets internal API to sign and broadcast via the org's delegated account
 4. Registry records the grant in `registry.role_grants`
 
 **Revoking a role:**
-1. Deployer clicks "Revoke" on an active role grant
+1. Org owner clicks "Revoke" on an active role grant
 2. Frontend calls `DELETE /registry/orgs/{org_id}/contracts/{id}/roles/{role_grant_id}`
-3. Registry service encodes `revokeRole(role, platformOperatorAddress)` and calls wallets internal API to sign and broadcast
+3. Registry service encodes `revokeRole(role, address)` and calls wallets internal API to sign and broadcast
 4. Registry marks the grant as revoked in `registry.role_grants`
+
+Note: `DEFAULT_ADMIN_ROLE` cannot be revoked through this flow -- it uses OpenZeppelin's time-delayed `beginDefaultAdminTransfer` mechanism.
 
 ---
 
@@ -1469,7 +1471,7 @@ No changes needed to the Tiltfile when adding new TypeScript services -- just cr
 Since all signing goes through Turnkey, Anvil default private keys cannot be used for contract deployment. The Tiltfile provides three manual tasks for this workflow:
 
 1. **`fund-wallets`** -- Sends 100 ETH from Anvil account #0 to both `BEACON_OWNER_ADDRESS` and `PLATFORM_OPERATOR_ADDRESS` (from `.env`). This is the only step that uses an Anvil default key, since it's just a funding transfer -- not a platform operation.
-2. **`deploy-beacon`** -- Deploys the EVMAuth beacon implementation contract via the **beacon owner wallet** through the wallets service `/internal/send-tx` endpoint. Requires the wallets service to be running.
+2. **`deploy-beacon`** -- Deploys the EVMAuth beacon implementation contract via the **beacon owner wallet** through the wallets service `/internal/transactions` endpoint. Requires the wallets service to be running.
 3. **`deploy-platform`** -- Deploys the platform proxy contract (pointing to `EVMAUTH_BEACON_ADDRESS` from `.env`) via the **platform operator wallet** through the wallets service.
 
 These tasks can also be run directly via the CLI:
@@ -1596,8 +1598,8 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Service `.env.example` files: rewrite all with empty secrets, add missing vars (JWT, wallets URL); create wallets and console env files
 - [x] Auth service: deployer signup/login (passkey + OAuth), HTTP-only cookie
 - [x] EVM crate: Alloy HTTP provider, EVMAuth6909 bindings (balanceOf, isOperator, encode_mint)
-- [x] Platform contract config (`PLATFORM_CONTRACT_ADDRESS`, `RADIUS_RPC_URL`, `RADIUS_CHAIN_ID`) in auth service
-- [x] Capability token minting on new org creation (best-effort mint via wallets service `/internal/sign`)
+- [x] Platform contract config (`EVM_PLATFORM_CONTRACT_ADDRESS`, `EVM_RPC_URL`, `EVM_CHAIN_ID`) in auth service
+- [x] ~~Capability token minting on new org creation~~ (removed -- tokens are not auto-minted; managed manually by org owner, via API, or on-chain)
 - [x] Crate convention: shared crates accept config structs, never read environment variables directly
 - [x] Frontend: Console login page, console shell, org overview page
 - [x] Frontend: Code quality audit -- all 9 sections pass clean (TypeScript strictness, React correctness, API proxy security, session hardening, security, component architecture, Biome, App Router, workspace hygiene)
@@ -1620,7 +1622,7 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Contract deployment endpoint with `initialize()` calldata (registry calls wallets internal API for wallet lookup)
 - [x] Role grant/revoke endpoints (RESTful `/roles` resource) + Turnkey signing via wallets service
 - [x] Relevant token ID configuration per app registration
-- [x] Wallets service: `POST /internal/send-tx` endpoint (sign + broadcast via Turnkey + Alloy)
+- [x] Wallets service: `POST /internal/transactions` endpoint (sign + broadcast via Turnkey + Alloy)
 - [x] Registry internal API: `GET /internal/apps/by-client-id/{client_id}`, `GET /internal/contracts/{id}`
 - [x] Rewrite wallets schema: `entity_wallets` table (replaces `org_wallets` + `person_turnkey_refs`)
 - [x] Rewrite wallets schema: `entity_app_wallets` table (replaces `person_app_wallets`, adds org support)
@@ -1629,14 +1631,14 @@ Run as a Railway job (one-off) on each deploy before the backend services restar
 - [x] Wallets service: `POST /internal/entity-wallet` endpoint
 - [x] Wallets service: `POST /internal/entity-app-wallet` endpoint
 - [x] Update auth signup flow to use `entity-wallet` endpoint
-- [x] Update app registration creation to trigger entity app wallet derivation
-- [x] Update contract deployment to use org's entity app wallet as EVMAuth default admin
+- [x] ~~Update app registration creation to trigger entity app wallet derivation~~ (removed -- org app wallets are created on-demand by org owner, not on app registration)
+- [x] Update contract deployment to use org's default HD wallet address (index 0) as EVMAuth default admin with all roles
 - [x] Internal CLI tool (`evmauth-cli`) for beacon and platform contract deployment
 - [x] Console: App registration pages, contract deployment wizard, role grant management UI
 
 ### Phase 3 -- End User Auth
 
-- [x] Hosted auth UI (`/auth/end-user/login`) with `client_id` / `redirect_uri` / PKCE parameter validation (auth calls registry internal API)
+- [x] Hosted auth UI (`/authorize`) with `client_id` / `redirect_uri` / PKCE parameter validation (auth calls registry internal API)
 - [x] End user sub-org creation on first login (auth calls wallets internal API)
 - [x] HD wallet account creation per (person, app_registration) via wallets service
 - [x] Authorization code generation, storage (hashed in Redis with TTL), and issuance
@@ -1714,7 +1716,9 @@ PORT=8000
 # JWT signing (RS256 -- generate with: openssl genrsa -out private.pem 2048)
 JWT_PRIVATE_KEY_PEM=...
 JWT_PUBLIC_KEY_PEM=...
-AUTH_CODE_TTL_SECS=30
+DELEGATED_API_PUBLIC_KEY=...              # Required -- Turnkey delegated API public key
+AUTH_CODE_TTL_SECS=30                     # Default: 30
+WALLETS_SERVICE_URL=http://int-wallets:8000
 RUST_LOG=info,auth=debug
 
 # ---- Wallets Service ----
@@ -1729,37 +1733,53 @@ TURNKEY_API_PRIVATE_KEY=...
 BEACON_OWNER_TURNKEY_WALLET_ID=...
 BEACON_OWNER_ADDRESS=0x...
 
+# Platform operator wallet (Turnkey-managed -- no raw private key)
+# Also used by registry service if it needs the address for role encoding
+PLATFORM_OPERATOR_TURNKEY_WALLET_ID=...
+PLATFORM_OPERATOR_ADDRESS=0x...
+
 RUST_LOG=info,wallets=debug
 
 # ---- Registry Service ----
 
-# Platform operator wallet (Turnkey-managed -- no raw private key)
-PLATFORM_OPERATOR_TURNKEY_WALLET_ID=...
-PLATFORM_OPERATOR_ADDRESS=0x...
-
 # Platform EVMAuth contract (the platform's own deployed proxy)
-PLATFORM_CONTRACT_ADDRESS=0x...
+EVM_PLATFORM_CONTRACT_ADDRESS=0x...
+EVM_PLATFORM_OPERATOR_ADDRESS=0x...
 
 # Radius Network (mainnet: chain 723, testnet: chain 72344, local Anvil: chain 31337)
-RADIUS_RPC_URL=https://rpc.radiustech.xyz          # Mainnet; testnet: https://rpc.testnet.radiustech.xyz; local: http://localhost:8545
-RADIUS_CHAIN_ID=723                                 # Mainnet; testnet: 72344; local: 31337
+EVM_RPC_URL=https://rpc.radiustech.xyz              # Mainnet; testnet: https://rpc.testnet.radiustech.xyz; local: http://localhost:8545
+EVM_CHAIN_ID=723                                     # Mainnet; testnet: 72344; local: 31337
 EVMAUTH_BEACON_ADDRESS=0x...
+WALLETS_SERVICE_URL=http://int-wallets:8000
 RUST_LOG=info,registry=debug
 
 # ---- Assets Service ----
 
 # S3/MinIO
 S3_ENDPOINT=http://minio:9000
-S3_ACCESS_KEY=minio_admin
-S3_SECRET_KEY=minio_password
+S3_ACCESS_KEY_ID=minio_admin
+S3_SECRET_ACCESS_KEY=minio_password
 S3_BUCKET=evmauth
 S3_REGION=us-east-1
+S3_PRESIGNED_URL_EXPIRY_SECS=3600        # Default: 3600
 
 # ---- Gateway ----
 
 API_GATEWAY_URL=https://api.evmauth.com
 GATEWAY_TIMEOUT_SECS=30
 EXCLUDE_SERVICES=gateway,db
+SERVICE_NAME_PREFIX=                      # Optional, e.g. "int-" for internal services
+# RAILWAY_ENVIRONMENT_NAME              # Auto-set by Railway (not needed locally)
+
+# ---- Docs Service ----
+
+API_TITLE=API Documentation
+API_DESCRIPTION=Public REST API
+API_URL=http://localhost:8000
+API_VERSION=1
+EXCLUDE_SERVICES=docs,db,gateway
+SERVICE_NAME_PREFIX=                      # Optional
+# RAILWAY_ENVIRONMENT_NAME              # Auto-set by Railway (not needed locally)
 
 # ---- Frontend: Console (ts/services/console) ----
 
@@ -1777,14 +1797,14 @@ SESSION_SECRET=...                    # 32+ chars, required (no hardcoded fallba
 - Use `sqlx::query_as!` macros for all DB queries -- no string-interpolated SQL.
 - The `evm` crate should be integration-tested against a local Anvil fork of Radius, not a mock. Add an Anvil service to docker-compose for tests.
 - Turnkey API calls use the official `turnkey_client` SDK which handles retry logic internally via `RetryConfig` (exponential backoff, default 5 attempts). Do not add custom retry wrappers.
-- The platform has two Turnkey-managed HD wallets in the parent org: the **beacon owner wallet** (high-privilege, owns the UpgradeableBeacon and holds admin roles on the platform proxy) and the **platform operator wallet** (routine operations -- deploys proxies, mints/burns capability tokens). All signing goes through the Turnkey SDK via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/sign` endpoint. No raw private keys in any environment variable.
+- The platform has two Turnkey-managed HD wallets in the parent org: the **beacon owner wallet** (high-privilege, owns the UpgradeableBeacon and holds admin roles on the platform proxy) and the **platform operator wallet** (routine operations -- deploys proxies, mints/burns capability tokens). All signing goes through the Turnkey SDK via the wallets service. The `evm` crate is read-only (no signer); services encode calldata via `EvmClient::encode_mint()` and POST to the wallets service `/internal/signatures` endpoint. No raw private keys in any environment variable.
 - All contract addresses, tx hashes, and wallet addresses are stored as `TEXT` in Postgres (not `BYTEA`), EIP-55 checksummed format. Normalise on insert.
-- The `/auth/end-user/login` page must validate `redirect_uri` against `callback_urls` **before** initiating the OAuth flow -- never after -- to prevent open redirect attacks. Auth service calls registry internal API to validate.
+- The `/authorize` page must validate `redirect_uri` against `callback_urls` **before** initiating the OAuth flow -- never after -- to prevent open redirect attacks. Auth service calls registry internal API to validate.
 - Authorization codes are stored as `SHA-256(plaintext_code)` in Redis with key `auth_code:{hash}` and configurable TTL (default 30s via `AUTH_CODE_TTL_SECS`). The plaintext is returned once in the redirect and never stored. On token exchange, hash the submitted code and look it up in Redis, then delete immediately -- never store or log the plaintext code.
 - The ERC-712 nonce is a Unix timestamp in seconds. Reject requests where `abs(now - nonce) > 30`. This is replay protection, not a monotonic counter.
 - The Turnkey delegated account policy must be set at org sub-org creation time and must restrict to `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD` only. The wallets service owns this concern.
 - Session cookies must be: `HttpOnly`, `Secure`, `SameSite=Strict`.
-- The platform EVMAuth contract must be deployed and its address recorded in config before any org can be created. The registry service should verify `PLATFORM_CONTRACT_ADDRESS` is reachable on Radius at startup.
+- The platform EVMAuth contract must be deployed and its address recorded in config before any org can be created. The registry service should verify `EVM_PLATFORM_CONTRACT_ADDRESS` is reachable on Radius at startup.
 - Each service only reads/writes its own schema. Cross-service data access goes through internal APIs. Never add FK constraints across schemas.
 - New services should follow the established patterns: `service.json` for Tilt metadata, `api/error.rs` for `ApiError`, repository traits, utoipa annotations, health check endpoint.
 - The gateway auto-discovers services -- just add a new service directory under `rs/services/` and the Tiltfile picks it up.
@@ -1793,5 +1813,5 @@ SESSION_SECRET=...                    # 32+ chars, required (no hardcoded fallba
 - The `ts/packages/ui` package owns the Mantine theme. All services import the theme from `@evmauth/ui` -- never duplicate theme configuration.
 - Use the existing `check.sh` script for quality checks. It runs TypeScript checks (`biome check` + `pnpm -r run typecheck`) at the `ts/` workspace root, then Rust checks (`cargo fmt --check`, `cargo clippy --workspace`, `cargo test --workspace`) at the `rs/` workspace root.
 - Each entity (person or org) has one HD wallet in its Turnkey sub-org via `entity_wallets`. Account index 0 is the entity's platform identity. Additional accounts are derived per app and stored in `entity_app_wallets`.
-- Contract deployment must use the org's app-specific derived address as EVMAuth default admin, not the org's platform identity address (index 0).
-- When creating an app registration, the registry service must call wallets to derive the entity app wallet before returning success.
+- Contract deployment must use the org's default HD wallet address (index 0) as EVMAuth default admin and grant all other roles to it. The org owner can then reassign roles post-deployment.
+- Org entity app wallets are created on-demand by the org owner, not automatically on app registration. End-user entity app wallets are still auto-created on first authentication.

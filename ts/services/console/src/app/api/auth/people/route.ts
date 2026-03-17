@@ -7,39 +7,43 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-const LoginRequestSchema = z.object({ email: z.string().email() });
+const SignupRequestSchema = z.object({
+    displayName: z.string().min(1),
+    email: z.string().email(),
+});
 
 export async function POST(request: Request): Promise<NextResponse> {
-    const parsed = LoginRequestSchema.safeParse(await request.json());
+    const parsed = SignupRequestSchema.safeParse(await request.json());
     if (!parsed.success) {
         return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    const { email } = parsed.data;
+    const { displayName, email } = parsed.data;
 
-    // Call backend login
-    const loginResponse = await fetch(`${config.backendUrl}/auth/auth/login`, {
+    // Call backend signup
+    const signupResponse = await fetch(`${config.backendUrl}/auth/people`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+            display_name: displayName,
             primary_email: email,
             auth_provider_name: 'email',
             auth_provider_ref: email,
         }),
     });
 
-    if (!loginResponse.ok) {
-        const error = await loginResponse.json().catch(() => ({ error: 'Login failed' }));
-        return NextResponse.json(error, { status: loginResponse.status });
+    if (!signupResponse.ok) {
+        const error = await signupResponse.json().catch(() => ({ error: 'Signup failed' }));
+        return NextResponse.json(error, { status: signupResponse.status });
     }
 
     let tokenData: z.infer<typeof TokenResponseSchema>;
     try {
-        tokenData = TokenResponseSchema.parse(await loginResponse.json());
+        tokenData = TokenResponseSchema.parse(await signupResponse.json());
     } catch {
         return NextResponse.json({ error: 'Invalid response from auth service' }, { status: 502 });
     }
 
-    // Fetch the full person record using the session
+    // Fetch the full person record using the new session
     const meResponse = await fetch(`${config.backendUrl}/auth/me`, {
         headers: {
             Authorization: `${tokenData.token_type} ${tokenData.access_token}`,

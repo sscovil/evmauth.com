@@ -71,6 +71,10 @@ pub fn api_routes(_state: AppState) -> Router<AppState> {
         .route(
             "/internal/contracts/{id}",
             get_route(internal::contracts::get_contract_internal),
+        )
+        .route(
+            "/internal/contracts/by-app/{app_registration_id}",
+            get_route(internal::contracts::get_contract_by_app_registration_id),
         );
 
     router

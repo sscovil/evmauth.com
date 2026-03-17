@@ -12,7 +12,7 @@ export function UserMenu(): ReactElement | null {
     const { mutate } = useSWRConfig();
 
     async function handleLogout() {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        await fetch('/api/auth/sessions', { method: 'DELETE', credentials: 'include' });
         await mutate('/api/auth/me', undefined, { revalidate: false });
         await mutate('/api/proxy/auth/orgs', undefined, { revalidate: false });
         router.push('/auth/login');

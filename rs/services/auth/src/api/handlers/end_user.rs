@@ -123,7 +123,7 @@ struct EntityWalletInternal {
 /// showing the login form. Returns app info on success.
 #[utoipa::path(
     get,
-    path = "/auth/end-user/authorize",
+    path = "/authorize",
     params(
         ("client_id" = String, Query, description = "App client ID"),
         ("redirect_uri" = String, Query, description = "Callback URL"),
@@ -164,7 +164,7 @@ pub async fn authorize(
 /// authorization code and state.
 #[utoipa::path(
     post,
-    path = "/auth/end-user/authorize",
+    path = "/authorize",
     request_body = AuthenticateRequest,
     responses(
         (status = 200, description = "Auth code issued", body = AuthenticateResponse),
@@ -231,7 +231,7 @@ pub async fn authenticate(
 /// consumes the single-use auth code, and returns a signed JWT.
 #[utoipa::path(
     post,
-    path = "/auth/end-user/token",
+    path = "/tokens",
     request_body = TokenRequest,
     responses(
         (status = 200, description = "Token issued", body = crate::api::handlers::auth::TokenResponse),

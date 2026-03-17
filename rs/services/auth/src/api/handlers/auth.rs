@@ -96,7 +96,7 @@ struct EntityWalletResponse {
 /// workspace wallet, and issues a session JWT.
 #[utoipa::path(
     post,
-    path = "/auth/signup",
+    path = "/people",
     request_body = SignupRequest,
     responses(
         (status = 201, description = "Account created", body = TokenResponse),
@@ -277,7 +277,7 @@ pub async fn signup(
 
                     match state
                         .http_client
-                        .post(format!("{wallets_url}/internal/sign"))
+                        .post(format!("{wallets_url}/internal/signatures"))
                         .json(&mint_request)
                         .send()
                         .await
@@ -341,7 +341,7 @@ pub async fn signup(
 /// Deployer login
 #[utoipa::path(
     post,
-    path = "/auth/login",
+    path = "/sessions",
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Login successful", body = TokenResponse),
@@ -409,8 +409,8 @@ pub async fn login(
 
 /// Logout - clears the session cookie
 #[utoipa::path(
-    post,
-    path = "/auth/logout",
+    delete,
+    path = "/sessions",
     responses(
         (status = 200, description = "Logged out")
     ),

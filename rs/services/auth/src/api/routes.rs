@@ -32,21 +32,22 @@ pub fn api_routes(state: AppState) -> Router<AppState> {
         .route("/openapi.json", get(openapi_spec))
         .route("/health", get(health::health_check))
         // Auth routes (no session required)
-        .route("/auth/signup", post(auth_handlers::signup))
-        .route("/auth/login", post(auth_handlers::login))
-        .route("/auth/logout", post(auth_handlers::logout))
+        .route(
+            "/sessions",
+            post(auth_handlers::login).delete(auth_handlers::logout),
+        )
         // End-user auth routes (OAuth/PKCE flow)
         .route(
-            "/auth/end-user/authorize",
+            "/authorize",
             get(end_user::authorize).post(end_user::authenticate),
         )
-        .route("/auth/end-user/token", post(end_user::token_exchange))
+        .route("/tokens", post(end_user::token_exchange))
         // JWKS
         .route("/.well-known/jwks.json", get(jwks::jwks))
         // People routes
         .route(
             "/people",
-            get(people::list_people).post(people::create_person),
+            get(people::list_people).post(auth_handlers::signup),
         )
         .route(
             "/people/{id}",
